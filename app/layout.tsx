@@ -10,4 +10,4 @@ export default function RootLayout({
       <body>{children}</body>
     </html>
   );
-}
+}import "react-big-calendar/lib/css/react-big-calendar.css";

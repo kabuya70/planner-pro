@@ -1,8 +1,96 @@
 @import "tailwindcss";
 
+* {
+  box-sizing: border-box;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
-  background: #050816;
+  background: #020617;
+  color: white;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter",
+    "Segoe UI", sans-serif;
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.14), transparent 30%),
+    #020617;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #020617;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 999px;
+}
+
+.glass {
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(22px);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+}
+
+.card-hover {
+  transition: 0.25s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(30, 41, 59, 0.72);
+}
+
+.soft-button {
+  transition: 0.2s ease;
+}
+
+.soft-button:hover {
+  transform: translateY(-1px) scale(1.01);
+}
+
+.soft-button:active {
+  transform: scale(0.97);
+}
+.glass-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(28px);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
+  transition: all 0.25s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-4px);
+  background: rgba(255, 255, 255, 0.065);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.soft-button {
+  transition: all 0.2s ease;
+}
+
+.soft-button:hover {
+  transform: translateY(-1px);
+}
+
+.soft-button:active {
+  transform: scale(0.97);
 }

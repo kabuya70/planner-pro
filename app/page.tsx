@@ -21,15 +21,6 @@ type Task = {
   day: string;
   priority: string;
   category: string;
-  project_id?: string | null;
-};
-
-type Project = {
-  id: string;
-  created_at?: string;
-  user_id?: string | null;
-  name: string;
-  color?: string | null;
 };
 
 type Profile = {
@@ -68,11 +59,6 @@ export default function Home() {
   const [profession, setProfession] = useState("");
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState("all");
-  const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectColor, setNewProjectColor] = useState("#3b82f6");
-  const [taskProjectId, setTaskProjectId] = useState("");
   const [taskName, setTaskName] = useState("");
   const [taskDescription, setTaskDescription] = useState("");
   const [taskDay, setTaskDay] = useState("Lundi");
@@ -88,7 +74,6 @@ export default function Home() {
   const [editEndTime, setEditEndTime] = useState("09:00");
   const [editPriority, setEditPriority] = useState("Normal");
   const [editCategory, setEditCategory] = useState("Études");
-  const [editProjectId, setEditProjectId] = useState("");
 
   useEffect(() => {
     checkUser();
@@ -127,6 +112,17 @@ export default function Home() {
     const userProfile = await loadProfile(currentUser);
 
     if (!userProfile || !profileIsComplete(userProfile)) {
+      const pending = localStorage.getItem("pending_profile");
+
+      if (pending) {
+        const saved = JSON.parse(pending);
+        setNom(saved.nom || "");
+        setPrenom(saved.prenom || "");
+        setAge(saved.age || "");
+        setDateNaissance(saved.dateNaissance || "");
+        setProfession(saved.profession || "");
+      }
+
       setScreen("profile");
       setEmail(currentUser.email || "");
       return;
@@ -148,11 +144,17 @@ export default function Home() {
   }
 
   async function loadProfile(currentUser: any) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .select("*")
       .eq("user_id", currentUser.id)
       .maybeSingle();
+
+    if (error) {
+      setMessage(error.message);
+      setProfile(null);
+      return null;
+    }
 
     if (data) {
       setProfile(data as Profile);
@@ -162,28 +164,6 @@ export default function Home() {
       setDateNaissance(data.date_naissance || "");
       setProfession(data.profession || "");
       return data as Profile;
-    }
-
-    const { data: emailProfile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("email", currentUser.email)
-      .maybeSingle();
-
-    if (emailProfile) {
-      await supabase
-        .from("profiles")
-        .update({ user_id: currentUser.id })
-        .eq("id", emailProfile.id);
-
-      const updated = { ...emailProfile, user_id: currentUser.id } as Profile;
-      setProfile(updated);
-      setNom(updated.nom || "");
-      setPrenom(updated.prenom || "");
-      setAge(updated.age ? String(updated.age) : "");
-      setDateNaissance(updated.date_naissance || "");
-      setProfession(updated.profession || "");
-      return updated;
     }
 
     setProfile(null);
@@ -198,7 +178,10 @@ export default function Home() {
   async function saveProfile() {
     setMessage("");
 
-    if (!user) return;
+    if (!user) {
+      setMessage("Utilisateur introuvable.");
+      return;
+    }
 
     if (!nom || !prenom || !age || !dateNaissance || !profession) {
       setMessage("Remplis tous les champs du profil.");
@@ -206,6 +189,7 @@ export default function Home() {
     }
 
     const payload = {
+      id: user.id,
       email: user.email,
       nom,
       prenom,
@@ -216,24 +200,16 @@ export default function Home() {
       password_set: false,
     };
 
-    if (profile?.id) {
-      const { error } = await supabase
-        .from("profiles")
-        .update(payload)
-        .eq("id", profile.id);
+    const { error } = await supabase
+      .from("profiles")
+      .upsert(payload);
 
-      if (error) {
-        setMessage(error.message);
-        return;
-      }
-    } else {
-      const { error } = await supabase.from("profiles").insert(payload);
-
-      if (error) {
-        setMessage(error.message);
-        return;
-      }
+    if (error) {
+      setMessage(error.message);
+      return;
     }
+
+    localStorage.removeItem("pending_profile");
 
     setMessage("");
     await loadProfile(user);
@@ -250,20 +226,16 @@ export default function Home() {
       return;
     }
 
-    const { error: profileError } = await supabase.from("profiles").insert({
-      email,
-      nom,
-      prenom,
-      age: Number(age),
-      date_naissance: dateNaissance,
-      profession,
-      password_set: false,
-    });
-
-    if (profileError) {
-      setMessage(profileError.message);
-      return;
-    }
+    localStorage.setItem(
+      "pending_profile",
+      JSON.stringify({
+        nom,
+        prenom,
+        age,
+        dateNaissance,
+        profession,
+      })
+    );
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -314,56 +286,9 @@ export default function Home() {
     await supabase.auth.signOut();
     setUser(null);
     setTasks([]);
-    setProjects([]);
     setProfile(null);
     setScreen("login");
     setMessage("");
-  }
-
-  async function loadProjects(userId: string) {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    const list = (data || []) as Project[];
-    setProjects(list);
-
-    if (!taskProjectId && list[0]) setTaskProjectId(list[0].id);
-  }
-
-  async function createProject() {
-    if (!newProjectName.trim() || !user) return;
-
-    const { data, error } = await supabase
-      .from("projects")
-      .insert({
-        name: newProjectName.trim(),
-        color: newProjectColor,
-        user_id: user.id,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    if (data) {
-      const project = data as Project;
-      setProjects((prev) => [...prev, project]);
-      setNewProjectName("");
-      setNewProjectColor("#3b82f6");
-      setSelectedProjectId(project.id);
-      setTaskProjectId(project.id);
-    }
   }
 
   async function loadTasks(userId: string) {
@@ -391,7 +316,6 @@ export default function Home() {
         day: taskDay,
         priority: taskPriority,
         category: taskCategory,
-        project_id: taskProjectId || null,
         user_id: user.id,
       })
       .select()
@@ -453,7 +377,6 @@ export default function Home() {
     setEditEndTime(task.end_time || "09:00");
     setEditPriority(task.priority || "Normal");
     setEditCategory(task.category || "Études");
-    setEditProjectId(task.project_id || "");
   }
 
   async function saveEdit() {
@@ -470,7 +393,6 @@ export default function Home() {
         end_time: editEndTime,
         priority: editPriority,
         category: editCategory,
-        project_id: editProjectId || null,
       })
       .eq("id", editingTask.id);
 
@@ -524,25 +446,11 @@ export default function Home() {
     return "bg-blue-500/30 border-blue-300/20";
   }
 
-  function projectName(projectId?: string | null) {
-    if (!projectId) return "Sans projet";
-    return projects.find((project) => project.id === projectId)?.name || "Sans projet";
-  }
-
-  function projectColor(projectId?: string | null) {
-    if (!projectId) return "#64748b";
-    return projects.find((project) => project.id === projectId)?.color || "#3b82f6";
-  }
-
-  const visibleTasks = selectedProjectId === "all"
-    ? tasks
-    : tasks.filter((task) => task.project_id === selectedProjectId);
-
-  const completed = visibleTasks.filter((t) => t.done).length;
-  const progress = visibleTasks.length ? Math.round((completed / visibleTasks.length) * 100) : 0;
-  const urgent = visibleTasks.filter((t) => t.priority === "Urgent" && !t.done).length;
-  const late = visibleTasks.filter((t) => taskStatus(t).label === "En retard").length;
-  const nextTask = visibleTasks.find((t) => !t.done);
+  const completed = tasks.filter((t) => t.done).length;
+  const progress = tasks.length ? Math.round((completed / tasks.length) * 100) : 0;
+  const urgent = tasks.filter((t) => t.priority === "Urgent" && !t.done).length;
+  const late = tasks.filter((t) => taskStatus(t).label === "En retard").length;
+  const nextTask = tasks.find((t) => !t.done);
 
   if (!user && screen === "register") {
     return (
@@ -676,61 +584,9 @@ export default function Home() {
 
               <div className="text-sm text-white/60">
                 <p>{completed} terminées</p>
-                <p>{visibleTasks.length - completed} restantes</p>
-                <p>{visibleTasks.length} tâches au total</p>
+                <p>{tasks.length - completed} restantes</p>
+                <p>{tasks.length} tâches au total</p>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mb-5 grid gap-4 md:grid-cols-[1fr_.9fr]">
-          <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-2xl">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold">Projets</h2>
-                <p className="text-sm text-white/40">Classe tes tâches par contexte.</p>
-              </div>
-              <select value={selectedProjectId} onChange={(e) => setSelectedProjectId(e.target.value)} className="field max-w-[220px]">
-                <option value="all">Tous les projets</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>{project.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setSelectedProjectId("all")}
-                className={`rounded-2xl border px-3 py-2 text-sm transition ${selectedProjectId === "all" ? "border-white/30 bg-white text-black" : "border-white/10 bg-black/30 text-white hover:bg-white/10"}`}
-              >
-                Tous
-              </button>
-              {projects.map((project) => (
-                <button
-                  key={project.id}
-                  onClick={() => setSelectedProjectId(project.id)}
-                  className={`rounded-2xl border px-3 py-2 text-sm transition ${selectedProjectId === project.id ? "border-white/30 bg-white text-black" : "border-white/10 bg-black/30 text-white hover:bg-white/10"}`}
-                >
-                  <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: project.color || "#3b82f6" }} />
-                  {project.name}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[1.6rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-2xl">
-            <h2 className="mb-3 text-lg font-bold">Nouveau projet</h2>
-            <div className="grid gap-3 md:grid-cols-[1fr_90px_auto]">
-              <Input placeholder="Nom du projet" value={newProjectName} setValue={setNewProjectName} />
-              <input
-                type="color"
-                value={newProjectColor}
-                onChange={(e) => setNewProjectColor(e.target.value)}
-                className="h-[46px] w-full cursor-pointer rounded-2xl border border-white/10 bg-black/45 p-2"
-              />
-              <button onClick={createProject} className="rounded-2xl bg-white px-4 py-3 text-sm font-extrabold text-black transition hover:scale-[1.03] hover:bg-green-200">
-                Créer
-              </button>
             </div>
           </div>
         </section>
@@ -738,19 +594,13 @@ export default function Home() {
         <section className="mb-5 rounded-[1.6rem] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-2xl">
           <h2 className="mb-4 text-lg font-bold">Ajouter une tâche</h2>
 
-          <div className="grid gap-3 md:grid-cols-7">
+          <div className="grid gap-3 md:grid-cols-6">
             <Input placeholder="Titre" value={taskName} setValue={setTaskName} />
             <select value={taskDay} onChange={(e) => setTaskDay(e.target.value)} className="field">{days.map((d) => <option key={d}>{d}</option>)}</select>
             <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="field" />
             <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="field" />
             <select value={taskPriority} onChange={(e) => setTaskPriority(e.target.value)} className="field"><option>Urgent</option><option>Important</option><option>Normal</option></select>
             <select value={taskCategory} onChange={(e) => setTaskCategory(e.target.value)} className="field"><option>Études</option><option>Travail</option><option>Sport</option><option>Perso</option><option>Loisirs</option></select>
-            <select value={taskProjectId} onChange={(e) => setTaskProjectId(e.target.value)} className="field">
-              <option value="">Sans projet</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
           </div>
 
           <textarea
@@ -807,7 +657,7 @@ export default function Home() {
                   />
                 ))}
 
-                {visibleTasks.filter((t) => t.day === day).map((task) => {
+                {tasks.filter((t) => t.day === day).map((task) => {
                   const st = taskStatus(task);
 
                   return (
@@ -842,10 +692,6 @@ export default function Home() {
                       <p className="mt-1 text-[10px] opacity-75">
                         {task.start_time || task.hour} - {task.end_time || "?"}
                       </p>
-                      <p className="mt-1 inline-flex items-center rounded-full bg-black/20 px-2 py-0.5 text-[10px]">
-                        <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: projectColor(task.project_id) }} />
-                        {projectName(task.project_id)}
-                      </p>
 
                       <div className="mt-1 flex flex-wrap gap-1">
                         <span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px]">{task.priority}</span>
@@ -878,7 +724,6 @@ export default function Home() {
               <p><span className="text-white/40">Priorité :</span> {selectedTask.priority}</p>
               <p><span className="text-white/40">Statut :</span> {taskStatus(selectedTask).label}</p>
               <p><span className="text-white/40">Catégorie :</span> {selectedTask.category}</p>
-              <p><span className="text-white/40">Projet :</span> {projectName(selectedTask.project_id)}</p>
               <p className="rounded-2xl bg-white/[0.05] p-4 text-white/80">{selectedTask.description || "Aucune description."}</p>
             </div>
 
@@ -928,13 +773,6 @@ export default function Home() {
                 <option>Sport</option>
                 <option>Perso</option>
                 <option>Loisirs</option>
-              </select>
-
-              <select value={editProjectId} onChange={(e) => setEditProjectId(e.target.value)} className="field">
-                <option value="">Sans projet</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>{project.name}</option>
-                ))}
               </select>
 
               <button onClick={saveEdit} className="rounded-2xl bg-green-500 px-4 py-3 font-black text-black hover:bg-green-300">
