@@ -22,7 +22,10 @@ const hours = Array.from(
 const daysLabel = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
 function toKey(date: Date) {
-  return date.toISOString().split("T")[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function getMonday(date: Date) {
@@ -49,6 +52,12 @@ function timeToMinutes(time?: string) {
   return h * 60 + (m || 0);
 }
 
+function minutesToTime(minutes: number) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 function taskTop(start?: string) {
   const minutes = timeToMinutes(start);
   return ((minutes - START_HOUR * 60) / 60) * HOUR_HEIGHT;
@@ -66,6 +75,7 @@ export default function CalendarPage() {
   const [projects, setProjects] = useState<any[]>([]);
   const [currentWeek, setCurrentWeek] = useState(getMonday(new Date()));
   const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [draggedTask, setDraggedTask] = useState<any>(null);
 
   useEffect(() => {
     loadData();
@@ -101,6 +111,31 @@ export default function CalendarPage() {
     return tasks.filter((task) => task.date === key);
   }
 
+  async function moveTask(task: any, date: Date, hour: number) {
+    const startMinutes = hour * 60;
+
+    const oldStart = timeToMinutes(task.start_time);
+    const oldEnd = timeToMinutes(task.end_time || task.start_time);
+    const duration = Math.max(oldEnd - oldStart, 30);
+
+    const newStart = minutesToTime(startMinutes);
+    const newEnd = minutesToTime(Math.min(startMinutes + duration, END_HOUR * 60));
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({
+        date: toKey(date),
+        start_time: newStart,
+        end_time: newEnd,
+      })
+      .eq("id", task.id);
+
+    if (!error) {
+      setDraggedTask(null);
+      loadData();
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#030712] text-white flex overflow-hidden">
       <Sidebar />
@@ -115,7 +150,7 @@ export default function CalendarPage() {
               Agenda semaine
             </h1>
             <p className="mt-2 text-sm text-white/45">
-              Les tâches occupent maintenant leur vraie durée.
+              Glisse une tâche pour changer son jour et son heure.
             </p>
           </div>
 
@@ -151,7 +186,7 @@ export default function CalendarPage() {
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/45">
-              Vue semaine
+              Vue semaine · Drag & Drop
             </div>
           </div>
 
@@ -201,7 +236,16 @@ export default function CalendarPage() {
                   {hours.map((hour) => (
                     <div
                       key={hour}
-                      className="border-b border-white/[0.035]"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (draggedTask) {
+                          moveTask(draggedTask, date, hour);
+                        }
+                      }}
+                      className={`border-b border-white/[0.035] transition ${
+                        draggedTask ? "hover:bg-white/[0.06]" : ""
+                      }`}
                       style={{ height: HOUR_HEIGHT }}
                     />
                   ))}
@@ -211,8 +255,11 @@ export default function CalendarPage() {
                     const color = project?.color || "#6b7280";
 
                     return (
-                      <button
+                      <div
                         key={task.id}
+                        draggable
+                        onDragStart={() => setDraggedTask(task)}
+                        onDragEnd={() => setDraggedTask(null)}
                         onClick={() =>
                           setSelectedTask({
                             ...task,
@@ -220,7 +267,7 @@ export default function CalendarPage() {
                             color,
                           })
                         }
-                        className="absolute left-2 right-2 z-10 rounded-2xl border border-white/10 bg-white/[0.075] p-3 text-left shadow-xl backdrop-blur-xl transition hover:scale-[1.015] hover:bg-white/[0.11]"
+                        className="absolute left-2 right-2 z-10 cursor-grab rounded-2xl border border-white/10 bg-white/[0.075] p-3 text-left shadow-xl backdrop-blur-xl transition active:cursor-grabbing hover:scale-[1.015] hover:bg-white/[0.11]"
                         style={{
                           top: taskTop(task.start_time),
                           height: taskHeight(task.start_time, task.end_time),
@@ -239,7 +286,7 @@ export default function CalendarPage() {
                         <p className="mt-1 truncate text-[11px] text-white/30">
                           {project?.name || "Sans projet"}
                         </p>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
