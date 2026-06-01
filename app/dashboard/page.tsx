@@ -7,10 +7,10 @@ import { createClient } from "@supabase/supabase-js";
 import {
   CheckCircle2,
   AlertTriangle,
-  CalendarDays,
   FolderKanban,
   ArrowUpRight,
   Circle,
+  Repeat,
 } from "lucide-react";
 import {
   LineChart,
@@ -30,7 +30,10 @@ const supabase = createClient(
 const weekDays = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
 function dateKey(date: Date) {
-  return date.toISOString().split("T")[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function startOfWeek(date: Date) {
@@ -41,9 +44,35 @@ function startOfWeek(date: Date) {
   return d;
 }
 
+function addDays(date: Date, amount: number) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + amount);
+  return d;
+}
+
+function isRoutine(task: any) {
+  return task.type === "routine" || task.category === "Routine";
+}
+
+function routineDone(task: any, logs: any[], key: string) {
+  return logs.some(
+    (log) => log.task_id === task.id && log.completed_date === key
+  );
+}
+
+function taskColor(task: any, projects: any[]) {
+  const project = projects.find((p) => p.id === task.project_id);
+  return project?.color || task.color || "#64748b";
+}
+
+function projectName(task: any, projects: any[]) {
+  return projects.find((p) => p.id === task.project_id)?.name || null;
+}
+
 export default function DashboardPage() {
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [routineLogs, setRoutineLogs] = useState<any[]>([]);
 
   useEffect(() => {
     loadData();
@@ -52,47 +81,102 @@ export default function DashboardPage() {
   async function loadData() {
     const { data: tasksData } = await supabase.from("tasks").select("*");
     const { data: projectsData } = await supabase.from("projects").select("*");
+    const { data: logsData } = await supabase.from("routine_logs").select("*");
 
     setTasks(tasksData || []);
     setProjects(projectsData || []);
+    setRoutineLogs(logsData || []);
   }
 
   async function toggleTask(task: any) {
+    const today = dateKey(new Date());
+
+    if (isRoutine(task)) {
+      const existing = routineLogs.find(
+        (log) => log.task_id === task.id && log.completed_date === today
+      );
+
+      if (existing) {
+        await supabase.from("routine_logs").delete().eq("id", existing.id);
+      } else {
+        await supabase.from("routine_logs").insert({
+          task_id: task.id,
+          completed_date: today,
+        });
+      }
+
+      loadData();
+      return;
+    }
+
     await supabase.from("tasks").update({ done: !task.done }).eq("id", task.id);
     loadData();
   }
 
-  const total = tasks.length;
-  const completed = tasks.filter((t) => t.done).length;
-  const remaining = tasks.filter((t) => !t.done).length;
-  const urgent = tasks.filter((t) => t.priority === "Urgent" && !t.done).length;
-  const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const todayKey = dateKey(new Date());
 
-  const upcoming = tasks
-    .filter((t) => !t.done)
-    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
-    .slice(0, 4);
+  const routineTasks = tasks.filter(isRoutine);
+  const normalTasks = tasks.filter((t) => !isRoutine(t));
 
-  const nextTask = upcoming[0];
+  const todayTasks = tasks.filter((task) => {
+    if (isRoutine(task)) return true;
+    return task.date === todayKey;
+  });
 
-  const chartData = useMemo(() => {
-    const monday = startOfWeek(new Date());
+  const completedToday = todayTasks.filter((task) => {
+    if (isRoutine(task)) return routineDone(task, routineLogs, todayKey);
+    return task.done;
+  }).length;
 
-    return weekDays.map((label, index) => {
-      const day = new Date(monday);
-      day.setDate(monday.getDate() + index);
-      const key = dateKey(day);
+  const totalToday = todayTasks.length;
+  const progressToday =
+    totalToday > 0 ? Math.round((completedToday / totalToday) * 100) : 0;
 
-      const planned = tasks.filter((t) => t.date === key).length;
-      const done = tasks.filter((t) => t.date === key && t.done).length;
+  const urgent = todayTasks.filter((task) => {
+    const done = isRoutine(task)
+      ? routineDone(task, routineLogs, todayKey)
+      : task.done;
 
-      return {
-        day: label,
-        prévues: planned,
-        accomplies: done,
-      };
-    });
-  }, [tasks]);
+    return task.priority === "Urgent" && !done;
+  }).length;
+
+ const chartData = useMemo(() => {
+  const monday = startOfWeek(new Date());
+
+  return weekDays.map((label, index) => {
+    const day = addDays(monday, index);
+    const key = dateKey(day);
+
+    const dayTasks = tasks.filter(
+      (task) =>
+        !isRoutine(task) &&
+        task.date === key
+    );
+
+    const dayRoutines = tasks.filter(isRoutine);
+
+    const tasksPlanned = dayTasks.length;
+
+    const tasksDone = dayTasks.filter(
+      (task) => task.done
+    ).length;
+
+    const routinesDone = dayRoutines.filter(
+      (task) =>
+        routineDone(task, routineLogs, key)
+    ).length;
+
+    return {
+      day: label,
+
+      prévues: tasksPlanned,
+
+      accomplies: tasksDone,
+
+      routines: routinesDone,
+    };
+  });
+}, [tasks, routineLogs]);
 
   return (
     <main className="min-h-screen bg-[#030712] text-white flex overflow-hidden">
@@ -110,7 +194,7 @@ export default function DashboardPage() {
             </h1>
 
             <p className="mt-2 text-sm text-white/45">
-              Vue d’ensemble de ta journée, tes tâches et tes projets.
+              Tâches, routines et projets sur une seule vue.
             </p>
           </div>
 
@@ -123,33 +207,31 @@ export default function DashboardPage() {
         </header>
 
         <div className="mb-6 grid grid-cols-4 gap-4">
-          <ProgressCard progress={progress} completed={completed} total={total} />
+          <ProgressCard
+            progress={progressToday}
+            completed={completedToday}
+            total={totalToday}
+          />
 
           <GlassStat
-            icon={<CalendarDays size={18} />}
-            label="Prochaine tâche"
-            value={nextTask?.name || "Aucune"}
-            sub={
-              nextTask
-                ? `${nextTask.date || "Sans date"} · ${
-                    nextTask.start_time || nextTask.hour || "--:--"
-                  }`
-                : "Planning libre"
-            }
+            icon={<Repeat size={18} />}
+            label="Routines"
+            value={routineTasks.length}
+            sub="répétées chaque jour"
           />
 
           <GlassStat
             icon={<AlertTriangle size={18} />}
-            label="Urgentes"
+            label="Urgentes aujourd’hui"
             value={urgent}
-            sub="À traiter rapidement"
+            sub="à traiter rapidement"
           />
 
           <GlassStat
             icon={<CheckCircle2 size={18} />}
-            label="Terminées"
-            value={completed}
-            sub={`${remaining} restantes`}
+            label="Tâches simples"
+            value={normalTasks.length}
+            sub="hors routines"
           />
         </div>
 
@@ -158,14 +240,17 @@ export default function DashboardPage() {
             <div className="mb-5">
               <h2 className="text-lg font-semibold">Aperçu semaine</h2>
               <p className="text-xs text-white/40">
-                Tâches prévues vs tâches accomplies
+                Prévu vs accompli, routines incluses
               </p>
             </div>
 
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
-                  <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <CartesianGrid
+                    stroke="rgba(255,255,255,0.06)"
+                    vertical={false}
+                  />
                   <XAxis
                     dataKey="day"
                     stroke="rgba(255,255,255,0.35)"
@@ -188,64 +273,102 @@ export default function DashboardPage() {
                       color: "white",
                     }}
                   />
-                  <Line
-                    type="monotone"
-                    dataKey="prévues"
-                    stroke="rgba(255,255,255,0.75)"
-                    strokeWidth={2.5}
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="accomplies"
-                    stroke="rgba(255,255,255,0.32)"
-                    strokeWidth={2.5}
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
+
+                 <Line
+  type="monotone"
+  dataKey="prévues"
+  stroke="#ffffff"
+  strokeWidth={2.5}
+  dot={{ r: 4 }}
+  activeDot={{ r: 6 }}
+/>
+
+<Line
+  type="monotone"
+  dataKey="accomplies"
+  stroke="#03e42d"
+  strokeWidth={2.5}
+  dot={{ r: 4 }}
+  activeDot={{ r: 6 }}
+/>
+
+<Line
+  type="monotone"
+  dataKey="routines"
+  stroke="#1180b3"
+  strokeWidth={2.5}
+  dot={{ r: 4 }}
+  activeDot={{ r: 6 }}
+/>
                 </LineChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="mt-3 flex gap-5 text-xs text-white/40">
-              <span>● Prévues</span>
-              <span>● Accomplies</span>
-            </div>
+           <div className="mt-3 flex gap-5 text-xs">
+  <span className="text-white/70">
+    ● Tâches prévues
+  </span>
+
+  <span className="text-green-400">
+    ● Tâches accomplies
+  </span>
+
+  <span className="text-blue-400">
+    ● Routines accomplies
+  </span>
+</div>
           </section>
 
           <section className="glass-card rounded-[24px] p-5">
             <div className="mb-5">
-              <h2 className="text-lg font-semibold">Prochaines échéances</h2>
-              <p className="text-xs text-white/40">
-                Clique pour valider une tâche
-              </p>
+              <h2 className="text-lg font-semibold">Aujourd’hui</h2>
+              <p className="text-xs text-white/40">Clique pour valider</p>
             </div>
 
             <div className="space-y-3">
-              {upcoming.length === 0 ? (
-                <p className="text-sm text-white/35">Aucune tâche restante.</p>
+              {todayTasks.length === 0 ? (
+                <p className="text-sm text-white/35">
+                  Aucune tâche aujourd’hui.
+                </p>
               ) : (
-                upcoming.map((task) => (
-                  <button
-                    key={task.id}
-                    onClick={() => toggleTask(task)}
-                    className="w-full rounded-2xl border border-white/8 bg-black/20 p-3 text-left transition hover:bg-white/[0.06]"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Circle size={18} className="text-white/35" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">
-                          {task.name}
-                        </p>
-                        <p className="mt-1 text-xs text-white/35">
-                          {task.date || "Sans date"} ·{" "}
-                          {task.start_time || task.hour || "--:--"}
-                        </p>
+                todayTasks.slice(0, 6).map((task) => {
+                  const color = taskColor(task, projects);
+                  const pName = projectName(task, projects);
+                  const done = isRoutine(task)
+                    ? routineDone(task, routineLogs, todayKey)
+                    : task.done;
+
+                  return (
+                    <button
+                      key={task.id}
+                      onClick={() => toggleTask(task)}
+                      className="w-full rounded-2xl border border-white/8 bg-black/20 p-3 text-left transition hover:bg-white/[0.06]"
+                      style={{ boxShadow: `inset 4px 0 0 ${color}` }}
+                    >
+                      <div className="flex items-center gap-3">
+                        {done ? (
+                          <CheckCircle2 size={18} className="text-green-400" />
+                        ) : (
+                          <Circle size={18} className="text-white/35" />
+                        )}
+
+                        <div className="min-w-0">
+                          <p
+                            className={`truncate text-sm font-semibold ${
+                              done ? "line-through text-white/35" : ""
+                            }`}
+                          >
+                            {task.name}
+                          </p>
+                          <p className="mt-1 text-xs text-white/35">
+                            {pName || task.category || "Sans catégorie"} ·{" "}
+                            {task.start_time || "--:--"}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))
+                    </button>
+                  );
+                })
               )}
             </div>
           </section>
@@ -258,7 +381,10 @@ export default function DashboardPage() {
               </div>
 
               <Link href="/projects">
-                <ArrowUpRight size={18} className="text-white/35 hover:text-white" />
+                <ArrowUpRight
+                  size={18}
+                  className="text-white/35 hover:text-white"
+                />
               </Link>
             </div>
 
@@ -277,11 +403,19 @@ export default function DashboardPage() {
                       : 0;
 
                   return (
-                    <div key={project.id} className="rounded-2xl bg-black/20 p-3">
+                    <div
+                      key={project.id}
+                      className="rounded-2xl bg-black/20 p-3"
+                    >
                       <div className="mb-2 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <FolderKanban size={15} className="text-white/45" />
-                          <p className="text-sm font-semibold">{project.name}</p>
+                          <FolderKanban
+                            size={15}
+                            style={{ color: project.color || "#64748b" }}
+                          />
+                          <p className="text-sm font-semibold">
+                            {project.name}
+                          </p>
                         </div>
                         <span className="text-xs text-white/35">
                           {projectProgress}%
@@ -290,8 +424,11 @@ export default function DashboardPage() {
 
                       <div className="h-1.5 rounded-full bg-white/10">
                         <div
-                          className="h-1.5 rounded-full bg-white/45"
-                          style={{ width: `${projectProgress}%` }}
+                          className="h-1.5 rounded-full"
+                          style={{
+                            width: `${projectProgress}%`,
+                            backgroundColor: project.color || "#64748b",
+                          }}
                         />
                       </div>
                     </div>
@@ -322,7 +459,7 @@ function GlassStat({ icon, label, value, sub }: any) {
 function ProgressCard({ progress, completed, total }: any) {
   return (
     <div className="glass-card rounded-[24px] p-5">
-      <p className="text-xs text-white/38">Progression</p>
+      <p className="text-xs text-white/38">Progression du jour</p>
 
       <div className="mt-4 flex items-center gap-4">
         <div
@@ -342,7 +479,7 @@ function ProgressCard({ progress, completed, total }: any) {
           <h2 className="text-2xl font-semibold">
             {completed}/{total}
           </h2>
-          <p className="mt-1 text-xs text-white/35">tâches terminées</p>
+          <p className="mt-1 text-xs text-white/35">validées aujourd’hui</p>
         </div>
       </div>
     </div>
