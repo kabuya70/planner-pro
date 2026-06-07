@@ -1,4 +1,11 @@
-import "./globals.css";
+﻿import "./globals.css";
+import "react-big-calendar/lib/css/react-big-calendar.css";
+import ThemeProvider from "@/components/ThemeProvider";
+
+export const metadata = {
+  title: "Planner Pro",
+  description: "Smart productivity planner",
+};
 
 export default function RootLayout({
   children,
@@ -7,7 +14,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="fr">
-      <body>{children}</body>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
-}import "react-big-calendar/lib/css/react-big-calendar.css";
+}

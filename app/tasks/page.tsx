@@ -54,6 +54,7 @@ const colors = [
 export default function TasksPage() {
   const currentYear = new Date().getFullYear();
 
+  const [user, setUser] = useState<any>(null);
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [search, setSearch] = useState("");
@@ -83,16 +84,47 @@ export default function TasksPage() {
     loadData();
   }, []);
 
+  async function getCurrentUser() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    return data.user;
+  }
+
   async function loadData() {
-    const { data: tasksData } = await supabase
+    const currentUser = await getCurrentUser();
+
+    if (!currentUser) return;
+
+    setUser(currentUser);
+
+    const { data: tasksData, error: tasksError } = await supabase
       .from("tasks")
       .select("*")
+      .eq("user_id", currentUser.id)
       .order("created_at", { ascending: false });
 
-    const { data: projectsData } = await supabase.from("projects").select("*");
+    const { data: projectsData, error: projectsError } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("user_id", currentUser.id)
+      .order("created_at", { ascending: false });
+
+    if (tasksError) {
+      alert(tasksError.message);
+      return;
+    }
+
+    if (projectsError) {
+      console.error(projectsError.message);
+    }
 
     setTasks(tasksData || []);
-    setProjects(projectsData || []);
+    setProjects((projectsData || []).filter((project) => !project.archived));
   }
 
   function resetForm() {
@@ -117,10 +149,16 @@ export default function TasksPage() {
   async function saveTask() {
     if (!name.trim()) return;
 
+    const currentUser = user || (await getCurrentUser());
+
+    if (!currentUser) return;
+
+    const finalDate = getFinalDate();
+
     const basePayload = {
-      name,
-      description,
-      date: getFinalDate(),
+      name: name.trim(),
+      description: description.trim() || null,
+      date: finalDate,
       start_time: startTime,
       end_time: endTime,
       project_id: projectId || null,
@@ -132,12 +170,28 @@ export default function TasksPage() {
     };
 
     if (editingTask) {
-      await supabase.from("tasks").update(basePayload).eq("id", editingTask.id);
+      const { error } = await supabase
+        .from("tasks")
+        .update(basePayload)
+        .eq("id", editingTask.id)
+        .eq("user_id", currentUser.id);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
     } else {
-      await supabase.from("tasks").insert({
+      const { error } = await supabase.from("tasks").insert({
         ...basePayload,
         done: false,
+        status: "todo",
+        user_id: currentUser.id,
       });
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
     }
 
     resetForm();
@@ -167,33 +221,76 @@ export default function TasksPage() {
   }
 
   async function toggleTask(task: any) {
-    await supabase.from("tasks").update({ done: !task.done }).eq("id", task.id);
+    const currentUser = user || (await getCurrentUser());
+
+    if (!currentUser) return;
+
+    const nextDone = !task.done;
+
+    const { error } = await supabase
+      .from("tasks")
+      .update({
+        done: nextDone,
+        status: nextDone ? "done" : "todo",
+      })
+      .eq("id", task.id)
+      .eq("user_id", currentUser.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
     loadData();
   }
 
   async function deleteTask(id: string) {
-    await supabase.from("tasks").delete().eq("id", id);
+    const currentUser = user || (await getCurrentUser());
+
+    if (!currentUser) return;
+
+    const confirmDelete = confirm("Tu veux vraiment supprimer cette tâche ?");
+
+    if (!confirmDelete) return;
+
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", currentUser.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
     loadData();
   }
 
-  function getProjectName(id: string) {
-    return projects.find((p) => p.id === id)?.name || "Sans projet";
+  function getProjectName(projectId: string | null) {
+    if (!projectId) return "Sans projet";
+
+    const project = projects.find((project) => project.id === projectId);
+
+    return project?.name || "Sans projet";
   }
 
   function formatDate(date: string) {
     if (!date) return "Sans date";
+
     const [y, m, d] = date.split("-");
+
     return `${d}/${m}/${y}`;
   }
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
       const title = task.name || "";
-      const projectName = getProjectName(task.project_id);
+      const currentProjectName = getProjectName(task.project_id);
 
       return (
         title.toLowerCase().includes(search.toLowerCase()) &&
-        (projectFilter === "Tous" || projectName === projectFilter) &&
+        (projectFilter === "Tous" || currentProjectName === projectFilter) &&
         (priorityFilter === "Toutes" || task.priority === priorityFilter) &&
         (categoryFilter === "Toutes" ||
           (task.category || "Sans catégorie") === categoryFilter) &&
@@ -222,7 +319,9 @@ export default function TasksPage() {
             <p className="text-[11px] uppercase tracking-[0.3em] text-white/35">
               Tâches
             </p>
+
             <h1 className="text-3xl font-semibold mt-2">Toutes les tâches</h1>
+
             <p className="text-white/45 mt-2">
               Crée, modifie et organise tes tâches, routines et projets.
             </p>
@@ -272,6 +371,7 @@ export default function TasksPage() {
 
         <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 flex items-center gap-3">
           <Search size={18} className="text-white/35" />
+
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -315,6 +415,7 @@ export default function TasksPage() {
                       className="h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: task.color || "#64748b" }}
                     />
+
                     <p
                       className={`font-semibold ${
                         task.done ? "line-through text-white/35" : ""
@@ -338,7 +439,9 @@ export default function TasksPage() {
                 </div>
 
                 <p className="text-white/45">{getProjectName(task.project_id)}</p>
+
                 <p className="text-white/45">{formatDate(task.date)}</p>
+
                 <PriorityBadge priority={task.priority || "Normal"} />
 
                 <span
@@ -380,6 +483,7 @@ export default function TasksPage() {
                 <h2 className="text-2xl font-semibold">
                   {editingTask ? "Modifier la tâche" : "Nouvelle tâche"}
                 </h2>
+
                 <p className="text-sm text-white/40">
                   Tâche simple, routine ou tâche liée à un projet.
                 </p>
@@ -412,6 +516,7 @@ export default function TasksPage() {
                   className="field"
                 >
                   <option value="">Sans projet</option>
+
                   {projects.map((project) => (
                     <option key={project.id} value={project.id}>
                       {project.name}
@@ -423,6 +528,7 @@ export default function TasksPage() {
                   value={category}
                   onChange={(e) => {
                     setCategory(e.target.value);
+
                     if (e.target.value === "Routine") {
                       setRepeatRule("daily");
                     }
@@ -517,7 +623,9 @@ export default function TasksPage() {
                 onClick={saveTask}
                 className="mt-2 rounded-2xl border border-white/10 bg-white/[0.08] py-3 text-sm font-semibold hover:bg-white/[0.14] transition"
               >
-                {editingTask ? "Enregistrer les modifications" : "Créer la tâche"}
+                {editingTask
+                  ? "Enregistrer les modifications"
+                  : "Créer la tâche"}
               </button>
             </div>
           </div>

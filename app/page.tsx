@@ -1,27 +1,20 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 export default function HomePage() {
+  const router = useRouter();
+
   useEffect(() => {
-    async function check() {
-      const { data } = await supabase.auth.getSession();
+    router.replace("/dashboard");
+  }, [router]);
 
-      if (data.session) {
-        window.location.href = "/dashboard";
-      } else {
-        window.location.href = "/login";
-      }
-    }
-
-    check();
-  }, []);
-
-  return null;
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#030712] text-white">
+      <div className="rounded-[28px] border border-white/10 bg-white/[0.035] px-8 py-6 text-sm text-white/45 shadow-2xl shadow-black/30 backdrop-blur-2xl">
+        Redirection...
+      </div>
+    </main>
+  );
 }

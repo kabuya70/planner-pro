@@ -3,37 +3,31 @@
 import Sidebar from "@/components/Sidebar";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
-import { ChevronLeft, ChevronRight, CalendarDays, X } from "lucide-react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  FolderKanban,
+  MoreHorizontal,
+} from "lucide-react";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const START_HOUR = 7;
-const END_HOUR = 22;
-const HOUR_HEIGHT = 82;
+type CalendarView = "week" | "month" | "year";
 
-const hours = Array.from(
-  { length: END_HOUR - START_HOUR + 1 },
-  (_, i) => START_HOUR + i
-);
+const weekDays = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"];
+const hours = Array.from({ length: 15 }, (_, i) => i + 7);
+const SLOT_HEIGHT = 92;
 
-const daysLabel = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-
-function toKey(date: Date) {
+function dateKey(date: Date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
-}
-
-function getMonday(date: Date) {
-  const d = new Date(date);
-  const day = (d.getDay() + 6) % 7;
-  d.setDate(d.getDate() - day);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function addDays(date: Date, amount: number) {
@@ -42,419 +36,713 @@ function addDays(date: Date, amount: number) {
   return d;
 }
 
-function formatTime(t?: string) {
-  return t ? String(t).slice(0, 5) : "--:--";
+function startOfWeek(date: Date) {
+  const d = new Date(date);
+  const day = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - day);
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
-function timeToMinutes(time?: string) {
-  if (!time) return START_HOUR * 60;
-  const [h, m] = String(time).slice(0, 5).split(":").map(Number);
-  return h * 60 + (m || 0);
+function getTaskDate(task: any) {
+  const value = task.due_date || task.date || task.deadline;
+  if (!value) return null;
+  return String(value).slice(0, 10);
 }
 
-function minutesToTime(minutes: number) {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+function getTaskHour(task: any) {
+  if (task.hour) return String(task.hour).slice(0, 5);
+  if (task.start_time) return String(task.start_time).slice(0, 5);
+  return "";
 }
 
-function taskTop(start?: string) {
-  const minutes = timeToMinutes(start);
-  return ((minutes - START_HOUR * 60) / 60) * HOUR_HEIGHT;
+function getTaskEndHour(task: any) {
+  if (task.end_time) return String(task.end_time).slice(0, 5);
+
+  const start = getTaskHour(task);
+  if (!start) return "";
+
+  const [h, m] = start.split(":").map(Number);
+  const endDate = new Date();
+  endDate.setHours(h + 1, m || 0, 0, 0);
+
+  return `${String(endDate.getHours()).padStart(2, "0")}:${String(
+    endDate.getMinutes()
+  ).padStart(2, "0")}`;
 }
 
-function taskHeight(start?: string, end?: string) {
-  const s = timeToMinutes(start);
-  const e = timeToMinutes(end || start);
-  const duration = Math.max(e - s, 30);
-  return Math.max((duration / 60) * HOUR_HEIGHT, 42);
+function minutesFromStart(hour: string) {
+  if (!hour) return 60;
+
+  const [h, m] = hour.split(":").map(Number);
+  return (h - 7) * 60 + (m || 0);
+}
+
+function durationMinutes(task: any) {
+  const start = getTaskHour(task);
+  const end = getTaskEndHour(task);
+
+  if (!start || !end) return 60;
+
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+
+  const duration = eh * 60 + em - (sh * 60 + sm);
+  return Math.max(duration, 40);
+}
+
+function getProject(task: any, projects: any[]) {
+  return projects.find((p) => p.id === task.project_id) || null;
+}
+
+function getTaskColor(task: any, projects: any[]) {
+  const project = getProject(task, projects);
+  return project?.color || task.color || "#64748b";
+}
+
+function getProjectName(task: any, projects: any[]) {
+  const project = getProject(task, projects);
+  return project?.name || task.category || "Personnel";
 }
 
 export default function CalendarPage() {
+  const today = new Date();
+
+  const [view, setView] = useState<CalendarView>("week");
+  const [currentDate, setCurrentDate] = useState(today);
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
-  const [currentWeek, setCurrentWeek] = useState(getMonday(new Date()));
-  const [selectedTask, setSelectedTask] = useState<any>(null);
-  const [draggedTask, setDraggedTask] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     loadData();
   }, []);
 
+  async function getCurrentUser() {
+    const { data, error } = await supabase.auth.getUser();
+
+    if (error || !data.user) {
+      window.location.href = "/login";
+      return null;
+    }
+
+    return data.user;
+  }
+
   async function loadData() {
-    const { data: tasksData } = await supabase.from("tasks").select("*");
-    const { data: projectsData } = await supabase.from("projects").select("*");
+    setLoading(true);
 
-    setTasks(tasksData || []);
-    setProjects(projectsData || []);
-  }
+    const currentUser = await getCurrentUser();
 
-  function getProject(task: any) {
-    return projects.find((p) => p.id === task.project_id);
-  }
-
-  function getTaskColor(task: any) {
-    const project = getProject(task);
-    return project?.color || task.color || "#64748b";
-  }
-
-  const weekDays = useMemo(() => {
-    return Array.from({ length: 7 }, (_, i) => addDays(currentWeek, i));
-  }, [currentWeek]);
-
-  const weekTitle = `${weekDays[0].toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-  })} - ${weekDays[6].toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })}`;
-
-  function tasksForDay(date: Date) {
-    const key = toKey(date);
-
-    return tasks.filter((task) => {
-      if (task.type === "routine" || task.category === "Routine") {
-        return true;
-      }
-
-      return task.date === key;
-    });
-  }
-
-  async function moveTask(task: any, date: Date, hour: number) {
-    const startMinutes = hour * 60;
-
-    const oldStart = timeToMinutes(task.start_time);
-    const oldEnd = timeToMinutes(task.end_time || task.start_time);
-    const duration = Math.max(oldEnd - oldStart, 30);
-
-    const newStart = minutesToTime(startMinutes);
-    const newEnd = minutesToTime(
-      Math.min(startMinutes + duration, END_HOUR * 60)
-    );
-
-    const updatePayload: any = {
-      start_time: newStart,
-      end_time: newEnd,
-    };
-
-    if (!(task.type === "routine" || task.category === "Routine")) {
-      updatePayload.date = toKey(date);
+    if (!currentUser) {
+      setLoading(false);
+      return;
     }
 
-    const { error } = await supabase
+    const { data: taskData, error: taskError } = await supabase
       .from("tasks")
-      .update(updatePayload)
-      .eq("id", task.id);
+      .select("*")
+      .eq("user_id", currentUser.id)
+      .order("created_at", { ascending: false });
 
-    if (!error) {
-      setDraggedTask(null);
-      loadData();
+    const { data: projectData, error: projectError } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("user_id", currentUser.id);
+
+    if (taskError) {
+      alert(taskError.message);
     }
+
+    if (projectError) {
+      console.error(projectError.message);
+    }
+
+    setTasks(taskData || []);
+    setProjects(projectData || []);
+    setLoading(false);
   }
 
-  async function toggleDone(task: any) {
-    await supabase.from("tasks").update({ done: !task.done }).eq("id", task.id);
-    setSelectedTask(null);
-    loadData();
+  function goPrevious() {
+    if (view === "week") {
+      setCurrentDate(addDays(currentDate, -7));
+      return;
+    }
+
+    if (view === "month") {
+      setCurrentDate(
+        new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1)
+      );
+      return;
+    }
+
+    setCurrentDate(new Date(currentDate.getFullYear() - 1, 0, 1));
   }
 
-  async function deleteTask(task: any) {
-    await supabase.from("tasks").delete().eq("id", task.id);
-    setSelectedTask(null);
-    loadData();
+  function goNext() {
+    if (view === "week") {
+      setCurrentDate(addDays(currentDate, 7));
+      return;
+    }
+
+    if (view === "month") {
+      setCurrentDate(
+        new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
+      );
+      return;
+    }
+
+    setCurrentDate(new Date(currentDate.getFullYear() + 1, 0, 1));
   }
+
+  const weekStart = startOfWeek(currentDate);
+  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  const title = useMemo(() => {
+    if (view === "week") {
+      const start = weekDates[0].toLocaleDateString("fr-FR", {
+        day: "2-digit",
+        month: "short",
+      });
+
+      const end = weekDates[6].toLocaleDateString("fr-FR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+      return `${start} - ${end}`;
+    }
+
+    if (view === "month") {
+      return currentDate.toLocaleDateString("fr-FR", {
+        month: "long",
+        year: "numeric",
+      });
+    }
+
+    return String(currentDate.getFullYear());
+  }, [view, currentDate, weekDates]);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex overflow-hidden">
+    <main className="min-h-screen bg-[#030712] text-white flex">
       <Sidebar />
 
-      <section className="flex-1 p-6 overflow-y-auto">
-        <header className="mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-[11px] uppercase tracking-[0.3em] text-white/35">
-              Calendrier
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-              Agenda semaine
-            </h1>
-            <p className="mt-2 text-sm text-white/45">
-              Tâches, routines, projets et planning horaire.
-            </p>
-          </div>
+      <section className="flex-1 p-8">
+        <div className="mx-auto max-w-[1500px]">
+          <header className="mb-7 flex items-start justify-between gap-8">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
+                Calendrier
+              </p>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setCurrentWeek(getMonday(new Date()))}
-              className="soft-button rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-2 text-sm"
-            >
-              Aujourd’hui
-            </button>
+              <h1 className="mt-3 text-4xl font-semibold tracking-tight">
+                {view === "week" && "Agenda semaine"}
+                {view === "month" && "Agenda mois"}
+                {view === "year" && "Agenda année"}
+              </h1>
 
-            <button
-              onClick={() => setCurrentWeek(addDays(currentWeek, -7))}
-              className="soft-button rounded-2xl border border-white/10 bg-white/[0.05] p-2"
-            >
-              <ChevronLeft size={18} />
-            </button>
+              <p className="mt-2 text-white/45">
+                Tâches, routines, projets et planning horaire.
+              </p>
+            </div>
 
-            <button
-              onClick={() => setCurrentWeek(addDays(currentWeek, 7))}
-              className="soft-button rounded-2xl border border-white/10 bg-white/[0.05] p-2"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
-        </header>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setCurrentDate(new Date())}
+                className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm font-medium transition hover:bg-white/[0.07]"
+              >
+                Aujourd’hui
+              </button>
 
-        <section className="glass-card rounded-[28px] overflow-hidden">
-          <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+              <button
+                onClick={goPrevious}
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.035] transition hover:bg-white/[0.07]"
+              >
+                <ChevronLeft size={18} />
+              </button>
+
+              <button
+                onClick={goNext}
+                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.035] transition hover:bg-white/[0.07]"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </header>
+
+          <section className="mb-6 flex items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.035] p-4">
             <div className="flex items-center gap-3">
               <CalendarDays size={18} className="text-white/45" />
-              <p className="font-semibold">{weekTitle}</p>
+              <h2 className="text-xl font-semibold capitalize">{title}</h2>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-white/45">
-              Vue semaine 
+            <div className="flex rounded-2xl border border-white/10 bg-black/20 p-1">
+              <ViewButton active={view === "week"} onClick={() => setView("week")}>
+                Semaine
+              </ViewButton>
+
+              <ViewButton active={view === "month"} onClick={() => setView("month")}>
+                Mois
+              </ViewButton>
+
+              <ViewButton active={view === "year"} onClick={() => setView("year")}>
+                Année
+              </ViewButton>
             </div>
-          </div>
+          </section>
 
-          <div className="grid grid-cols-[72px_repeat(7,1fr)] border-b border-white/10 bg-white/[0.02]">
-            <div />
-            {weekDays.map((date, i) => {
-              const today = toKey(date) === toKey(new Date());
+          {loading && (
+            <section className="rounded-[32px] border border-white/10 bg-white/[0.035] p-12 text-center text-white/45">
+              Chargement du calendrier...
+            </section>
+          )}
 
-              return (
-                <div
-                  key={toKey(date)}
-                  className={`border-l border-white/[0.06] px-3 py-4 text-center ${
-                    today ? "bg-white/[0.06]" : ""
-                  }`}
-                >
-                  <p className="text-xs uppercase tracking-widest text-white/35">
-                    {daysLabel[i]}
-                  </p>
-                  <p className="mt-1 text-xl font-semibold">{date.getDate()}</p>
-                </div>
-              );
-            })}
-          </div>
+          {!loading && view === "week" && (
+            <WeekView
+              weekDates={weekDates}
+              tasks={tasks}
+              projects={projects}
+              today={today}
+            />
+          )}
 
-          <div className="max-h-[64vh] overflow-y-auto">
-            <div
-              className="grid grid-cols-[72px_repeat(7,1fr)]"
-              style={{ height: hours.length * HOUR_HEIGHT }}
-            >
-              <div className="relative border-r border-white/[0.06]">
-                {hours.map((hour) => (
-                  <div
-                    key={hour}
-                    className="border-b border-white/[0.04] px-3 pt-2 text-xs text-white/30"
-                    style={{ height: HOUR_HEIGHT }}
-                  >
-                    {String(hour).padStart(2, "0")}:00
-                  </div>
-                ))}
-              </div>
+          {!loading && view === "month" && (
+            <MonthView
+              currentDate={currentDate}
+              tasks={tasks}
+              projects={projects}
+              today={today}
+            />
+          )}
 
-              {weekDays.map((date) => (
-                <div
-                  key={toKey(date)}
-                  className="relative border-r border-white/[0.04]"
-                >
-                  {hours.map((hour) => (
-                    <div
-                      key={hour}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        if (draggedTask) {
-                          moveTask(draggedTask, date, hour);
-                        }
-                      }}
-                      className={`border-b border-white/[0.035] transition ${
-                        draggedTask ? "hover:bg-white/[0.06]" : ""
-                      }`}
-                      style={{ height: HOUR_HEIGHT }}
-                    />
-                  ))}
-
-                  {tasksForDay(date).map((task) => {
-                    const project = getProject(task);
-                    const color = getTaskColor(task);
-                    const isRoutine =
-                      task.type === "routine" || task.category === "Routine";
-
-                    return (
-                      <div
-                        key={`${task.id}-${toKey(date)}`}
-                        draggable
-                        onDragStart={() => setDraggedTask(task)}
-                        onDragEnd={() => setDraggedTask(null)}
-                        onClick={() =>
-                          setSelectedTask({
-                            ...task,
-                            currentDate: toKey(date),
-                            projectName: project?.name || null,
-                            color,
-                            isRoutine,
-                          })
-                        }
-                        className="absolute left-2 right-2 z-30 cursor-grab rounded-2xl border border-white/10 bg-white/[0.075] p-3 text-left shadow-xl backdrop-blur-xl transition active:cursor-grabbing hover:scale-[1.015] hover:bg-white/[0.11]"
-                        style={{
-                          top: taskTop(task.start_time),
-                          height: taskHeight(task.start_time, task.end_time),
-                          boxShadow: `inset 4px 0 0 ${color}, 0 18px 45px rgba(0,0,0,.22)`,
-                        }}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="truncate text-sm font-semibold">
-                            {task.name || "Sans titre"}
-                          </p>
-
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedTask({
-                                ...task,
-                                currentDate: toKey(date),
-                                projectName: project?.name || null,
-                                color,
-                                isRoutine,
-                              });
-                            }}
-                            className="text-white/45 hover:text-white"
-                          >
-                            ⋯
-                          </button>
-                        </div>
-
-                        <p className="mt-1 text-xs text-white/45">
-                          {formatTime(task.start_time)} -{" "}
-                          {formatTime(task.end_time)}
-                        </p>
-
-                        <p className="mt-1 truncate text-[11px] text-white/30">
-                          {project?.name ||
-                            task.category ||
-                            "Sans catégorie"}
-                        </p>
-
-                        
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </section>
-
-      {selectedTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-          <div className="glass-card w-full max-w-lg rounded-[28px] p-6">
-            <div className="mb-6 flex items-start justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-white/35">
-                  {selectedTask.isRoutine ? "Routine" : "Détail tâche"}
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold">
-                  {selectedTask.name}
-                </h2>
-              </div>
-
-              <button onClick={() => setSelectedTask(null)}>
-                <X className="text-white/45 hover:text-white" />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <Info
-                label="Type"
-                value={
-                  selectedTask.isRoutine
-                    ? "Routine quotidienne"
-                    : selectedTask.projectName
-                    ? "Tâche de projet"
-                    : "Tâche simple"
-                }
-              />
-
-              <Info
-                label="Projet / catégorie"
-                value={
-                  selectedTask.projectName ||
-                  selectedTask.category ||
-                  "Sans catégorie"
-                }
-              />
-
-              <Info
-                label="Date"
-                value={
-                  selectedTask.isRoutine
-                    ? `Tous les jours · affichée le ${selectedTask.currentDate}`
-                    : selectedTask.date || "Sans date"
-                }
-              />
-
-              <Info
-                label="Horaire"
-                value={`${formatTime(selectedTask.start_time)} - ${formatTime(
-                  selectedTask.end_time
-                )}`}
-              />
-
-              <Info
-                label="Priorité"
-                value={selectedTask.priority || "Normal"}
-              />
-
-              <Info
-                label="Description"
-                value={selectedTask.description || "Aucune description"}
-              />
-            </div>
-
-            <div className="mt-6 grid grid-cols-3 gap-3">
-              <button
-                onClick={() => toggleDone(selectedTask)}
-                className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold hover:bg-white/[0.12]"
-              >
-                {selectedTask.done ? "Réouvrir" : "Terminer"}
-              </button>
-
-              <button
-                onClick={() => {
-                  window.location.href = "/tasks";
-                }}
-                className="rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold hover:bg-white/[0.12]"
-              >
-                Modifier
-              </button>
-
-              <button
-                onClick={() => deleteTask(selectedTask)}
-                className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300 hover:bg-red-500/20"
-              >
-                Supprimer
-              </button>
-            </div>
-          </div>
+          {!loading && view === "year" && (
+            <YearView
+              currentDate={currentDate}
+              tasks={tasks}
+              projects={projects}
+              today={today}
+              onOpenMonth={(monthDate) => {
+                setCurrentDate(monthDate);
+                setView("month");
+              }}
+            />
+          )}
         </div>
-      )}
+      </section>
     </main>
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function ViewButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
-      <p className="text-xs text-white/35">{label}</p>
-      <p className="mt-1 text-sm text-white">{value}</p>
-    </div>
+    <button
+      onClick={onClick}
+      className={`rounded-xl px-5 py-2 text-sm font-semibold transition ${
+        active
+          ? "bg-white text-black"
+          : "text-white/55 hover:bg-white/[0.07] hover:text-white"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function WeekView({
+  weekDates,
+  tasks,
+  projects,
+  today,
+}: {
+  weekDates: Date[];
+  tasks: any[];
+  projects: any[];
+  today: Date;
+}) {
+  const todayKey = dateKey(today);
+
+  return (
+    <section className="overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.035] shadow-2xl shadow-black/20">
+      <div className="grid grid-cols-[78px_repeat(7,1fr)] border-b border-white/10">
+        <div className="border-r border-white/10 p-4 text-xs text-white/35">
+          Heure
+        </div>
+
+        {weekDates.map((date, index) => {
+          const key = dateKey(date);
+          const isToday = key === todayKey;
+
+          return (
+            <div
+              key={key}
+              className={`border-r border-white/10 p-4 text-center last:border-r-0 ${
+                isToday ? "bg-white/[0.06]" : ""
+              }`}
+            >
+              <p className="text-[11px] tracking-[0.25em] text-white/35">
+                {weekDays[index]}
+              </p>
+
+              <p className="mt-2 text-2xl font-semibold">{date.getDate()}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        className="grid grid-cols-[78px_repeat(7,1fr)] overflow-y-auto"
+        style={{ maxHeight: "calc(100vh - 315px)" }}
+      >
+        <div>
+          {hours.map((hour) => (
+            <div
+              key={hour}
+              className="border-b border-white/5 pr-3 pt-3 text-right text-xs text-white/35"
+              style={{ height: SLOT_HEIGHT }}
+            >
+              {String(hour).padStart(2, "0")}:00
+            </div>
+          ))}
+        </div>
+
+        {weekDates.map((date) => {
+          const key = dateKey(date);
+          const dayTasks = tasks.filter((task) => getTaskDate(task) === key);
+
+          return (
+            <div
+              key={key}
+              className="relative border-l border-white/5"
+              style={{ height: hours.length * SLOT_HEIGHT }}
+            >
+              {hours.map((hour) => (
+                <div
+                  key={hour}
+                  className="border-b border-white/5"
+                  style={{ height: SLOT_HEIGHT }}
+                />
+              ))}
+
+              {dayTasks.map((task) => {
+                const start = getTaskHour(task) || "08:00";
+                const top = (minutesFromStart(start) / 60) * SLOT_HEIGHT;
+
+                const height = Math.max(
+                  (durationMinutes(task) / 60) * SLOT_HEIGHT,
+                  58
+                );
+
+                const color = getTaskColor(task, projects);
+                const projectName = getProjectName(task, projects);
+
+                return (
+                  <div
+                    key={task.id}
+                    className="absolute left-2 right-2 overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-3 pl-5 shadow-xl shadow-black/30 transition hover:z-20 hover:scale-[1.025] hover:bg-white/[0.075]"
+                    style={{
+                      top,
+                      height,
+                    }}
+                  >
+                    <span
+                      className="absolute left-0 top-0 h-full w-[5px]"
+                      style={{ backgroundColor: color }}
+                    />
+
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="truncate text-sm font-semibold">
+                        {task.name || task.title || "Sans titre"}
+                      </p>
+
+                      <MoreHorizontal size={16} className="text-white/35" />
+                    </div>
+
+                    <p className="mt-2 text-xs text-white/55">
+                      {start}
+                      {getTaskEndHour(task) ? ` - ${getTaskEndHour(task)}` : ""}
+                    </p>
+
+                    <p className="mt-1 truncate text-xs text-white/35">
+                      {projectName}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function MonthView({
+  currentDate,
+  tasks,
+  projects,
+  today,
+}: {
+  currentDate: Date;
+  tasks: any[];
+  projects: any[];
+  today: Date;
+}) {
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
+
+  const firstDay = new Date(year, month, 1);
+  const startDay = (firstDay.getDay() + 6) % 7;
+  const gridStart = new Date(year, month, 1 - startDay);
+
+  const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
+  const todayKey = dateKey(today);
+
+  return (
+    <section className="overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.035] shadow-2xl shadow-black/20">
+      <div className="grid grid-cols-7 border-b border-white/10">
+        {weekDays.map((day) => (
+          <div
+            key={day}
+            className="p-4 text-center text-[11px] font-medium tracking-[0.25em] text-white/35"
+          >
+            {day}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7">
+        {days.map((date) => {
+          const key = dateKey(date);
+          const isToday = key === todayKey;
+          const isCurrentMonth = date.getMonth() === month;
+
+          const dayTasks = tasks
+            .filter((task) => getTaskDate(task) === key)
+            .sort((a, b) => getTaskHour(a).localeCompare(getTaskHour(b)));
+
+          return (
+            <div
+              key={key}
+              className={`min-h-[155px] border border-white/5 p-3 transition hover:bg-white/[0.055] ${
+                !isCurrentMonth ? "opacity-35" : ""
+              }`}
+            >
+              <div className="mb-3 flex items-center justify-between">
+                <p
+                  className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${
+                    isToday ? "bg-white text-black" : "text-white/80"
+                  }`}
+                >
+                  {date.getDate()}
+                </p>
+
+                {dayTasks.length > 0 && (
+                  <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] text-white/40">
+                    {dayTasks.length}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {dayTasks.slice(0, 3).map((task) => {
+                  const color = getTaskColor(task, projects);
+
+                  return (
+                    <div
+                      key={task.id}
+                      className="relative overflow-hidden rounded-xl border border-white/10 bg-black/30 p-2 pl-4 text-xs transition hover:bg-white/[0.075]"
+                    >
+                      <span
+                        className="absolute left-0 top-0 h-full w-[4px]"
+                        style={{ backgroundColor: color }}
+                      />
+
+                      <p className="truncate font-semibold">
+                        {task.name || task.title || "Sans titre"}
+                      </p>
+
+                      <div className="mt-1 flex items-center gap-1 text-[10px] text-white/35">
+                        <Clock3 size={10} />
+                        {getTaskHour(task) || "--:--"}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {dayTasks.length > 3 && (
+                  <p className="text-xs text-white/35">
+                    +{dayTasks.length - 3} autre(s)
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function YearView({
+  currentDate,
+  tasks,
+  projects,
+  today,
+  onOpenMonth,
+}: {
+  currentDate: Date;
+  tasks: any[];
+  projects: any[];
+  today: Date;
+  onOpenMonth: (monthDate: Date) => void;
+}) {
+  const year = currentDate.getFullYear();
+  const todayKey = dateKey(today);
+
+  const months = Array.from({ length: 12 }, (_, month) => {
+    const date = new Date(year, month, 1);
+
+    return {
+      date,
+      month,
+      label: date.toLocaleDateString("fr-FR", { month: "long" }),
+    };
+  });
+
+  return (
+    <section className="grid grid-cols-3 gap-5">
+      {months.map((monthItem) => {
+        const monthTasks = tasks.filter((task) => {
+          const d = getTaskDate(task);
+          if (!d) return false;
+
+          const [taskYear, taskMonth] = d.split("-").map(Number);
+          return taskYear === year && taskMonth === monthItem.month + 1;
+        });
+
+        const doneCount = monthTasks.filter(
+          (task) => task.done || task.status === "done"
+        ).length;
+
+        const progress =
+          monthTasks.length > 0
+            ? Math.round((doneCount / monthTasks.length) * 100)
+            : 0;
+
+        const colors = Array.from(
+          new Set(monthTasks.map((task) => getTaskColor(task, projects)))
+        ).slice(0, 8);
+
+        return (
+          <button
+            key={monthItem.label}
+            onClick={() => onOpenMonth(monthItem.date)}
+            className="group rounded-[28px] border border-white/10 bg-white/[0.035] p-5 text-left shadow-2xl shadow-black/20 transition hover:-translate-y-1 hover:bg-white/[0.065]"
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="capitalize text-xl font-semibold">
+                  {monthItem.label}
+                </h3>
+
+                <p className="mt-1 text-xs text-white/35">
+                  {monthTasks.length} tâche(s) · {progress}% terminé
+                </p>
+              </div>
+
+              <span className="rounded-full bg-white/[0.06] px-3 py-1 text-xs text-white/45">
+                Ouvrir
+              </span>
+            </div>
+
+            <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-white transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+
+            {colors.length > 0 && (
+              <div className="mb-4 flex flex-wrap gap-2">
+                {colors.map((color) => (
+                  <span
+                    key={color}
+                    className="h-3 w-3 rounded-full ring-2 ring-white/10"
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {monthTasks.length === 0 && (
+                <p className="rounded-2xl border border-dashed border-white/10 p-5 text-center text-sm text-white/30">
+                  Aucun événement
+                </p>
+              )}
+
+              {monthTasks.slice(0, 4).map((task) => {
+                const color = getTaskColor(task, projects);
+                const d = getTaskDate(task);
+
+                return (
+                  <div
+                    key={task.id}
+                    className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-3 pl-5 text-sm transition group-hover:bg-white/[0.055]"
+                  >
+                    <span
+                      className="absolute left-0 top-0 h-full w-[5px]"
+                      style={{ backgroundColor: color }}
+                    />
+
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate font-semibold">
+                        {task.name || task.title || "Sans titre"}
+                      </p>
+
+                      <span
+                        className={`shrink-0 text-xs ${
+                          d === todayKey ? "text-green-300" : "text-white/35"
+                        }`}
+                      >
+                        {d?.split("-").reverse().join("/")}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-2 text-xs text-white/35">
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
+
+                      <FolderKanban size={12} />
+
+                      <span className="truncate">
+                        {getProjectName(task, projects)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {monthTasks.length > 4 && (
+                <p className="text-xs text-white/35">
+                  +{monthTasks.length - 4} autre(s)
+                </p>
+              )}
+            </div>
+          </button>
+        );
+      })}
+    </section>
   );
 }

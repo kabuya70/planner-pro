@@ -1,15 +1,16 @@
 "use client";
 
 import Sidebar from "@/components/Sidebar";
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   User,
-  Bell,
   Palette,
+  Bell,
+  CircleHelp,
   Shield,
-  LogOut,
-  Save,
+  ChevronRight,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -17,200 +18,160 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+const settingsItems = [
+  {
+    title: "Profil",
+    description: "Modifier ton nom affiché, ta profession et voir ton compte.",
+    href: "/settings/profil",
+    icon: User,
+  },
+  {
+    title: "Apparence",
+    description: "Choisir le thème visuel de l’application.",
+    href: "/settings/apparence",
+    icon: Palette,
+  },
+  {
+    title: "Notifications",
+    description: "Gérer les rappels et préférences de notification.",
+    href: "/settings/notifications",
+    icon: Bell,
+  },
+  {
+    title: "FAQ",
+    description: "Comprendre le fonctionnement de Planner Pro.",
+    href: "/settings/faq",
+    icon: CircleHelp,
+  },
+  {
+    title: "Sécurité",
+    description: "Gérer ta session et te déconnecter.",
+    href: "/settings/securite",
+    icon: Shield,
+  },
+];
+
 export default function SettingsPage() {
-  const [user, setUser] = useState<any>(null);
-  const [notifications, setNotifications] = useState(true);
-  const [theme, setTheme] = useState("Sombre");
-  const [message, setMessage] = useState("");
+  const [userName, setUserName] = useState("Utilisateur");
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
-    async function loadUser() {
-      const { data } = await supabase.auth.getUser();
-      setUser(data.user);
-    }
-
     loadUser();
   }, []);
 
-  async function logout() {
-    await supabase.auth.signOut();
-    window.location.href = "/";
+  async function loadUser() {
+    const { data } = await supabase.auth.getUser();
+    const user = data.user;
+
+    if (!user) {
+      setUserName("Utilisateur");
+      setUserEmail("");
+      return;
+    }
+
+    const displayName =
+      user.user_metadata?.display_name ||
+      user.user_metadata?.full_name ||
+      user.user_metadata?.name ||
+      "";
+
+    setUserName(displayName || user.email?.split("@")[0] || "Utilisateur");
+    setUserEmail(user.email || "");
   }
 
-  function saveSettings() {
-    setMessage("Paramètres sauvegardés.");
-    setTimeout(() => setMessage(""), 2500);
-  }
+  const initials = useMemo(() => {
+    const clean = userName.trim();
+
+    if (!clean) return "U";
+
+    const parts = clean.split(" ").filter(Boolean);
+
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+
+    return clean.slice(0, 1).toUpperCase();
+  }, [userName]);
 
   return (
-    <main className="min-h-screen bg-[#020617] text-white flex">
+    <main className="min-h-screen bg-[#030712] text-white flex">
       <Sidebar />
 
-      <section className="flex-1 p-8">
-        <header className="mb-8">
-          <p className="text-sm font-semibold text-blue-400">Paramètres</p>
-          <h1 className="text-4xl font-black mt-1">Réglages du compte</h1>
-          <p className="text-slate-400 mt-2">
-            Gère ton profil, les notifications et les préférences de ton planner.
-          </p>
-        </header>
+      <section className="flex-1 px-8 py-10">
+        <div className="mx-auto max-w-[760px]">
+          <header className="mb-8 text-center">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-white/35">
+              Paramètres
+            </p>
 
-        <div className="grid grid-cols-3 gap-6">
-          <section className="col-span-2 space-y-6">
-            <Card
-              icon={<User />}
-              title="Profil utilisateur"
-              description="Informations liées à ton compte connecté."
-            >
-              <div className="grid grid-cols-2 gap-4">
-                <Input label="Email" value={user?.email || ""} readOnly />
-                <Input
-                  label="Identifiant utilisateur"
-                  value={user?.id || ""}
-                  readOnly
-                />
-              </div>
-            </Card>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight">
+              Réglages
+            </h1>
 
-            <Card
-              icon={<Bell />}
-              title="Notifications"
-              description="Active ou désactive les rappels de ton planner."
-            >
-              <div className="flex items-center justify-between rounded-2xl bg-slate-950 border border-white/10 p-4">
-                <div>
-                  <p className="font-bold">Notifications navigateur</p>
-                  <p className="text-sm text-slate-500">
-                    Recevoir une alerte avant une tâche.
-                  </p>
-                </div>
+            <p className="mx-auto mt-3 max-w-[560px] text-sm leading-6 text-white/45">
+              Configure ton compte, ton apparence, tes notifications et les options de sécurité.
+            </p>
+          </header>
 
-                <button
-                  onClick={() => setNotifications(!notifications)}
-                  className={`h-8 w-14 rounded-full p-1 transition ${
-                    notifications ? "bg-blue-600" : "bg-slate-700"
-                  }`}
-                >
-                  <div
-                    className={`h-6 w-6 rounded-full bg-white transition ${
-                      notifications ? "translate-x-6" : ""
-                    }`}
-                  />
-                </button>
-              </div>
-            </Card>
+          <Link
+            href="/settings/profil"
+            className="mb-8 flex items-center justify-center gap-4 rounded-[28px] border border-white/10 bg-white/[0.035] p-5 shadow-2xl shadow-black/20 backdrop-blur-xl transition hover:-translate-y-1 hover:bg-white/[0.06]"
+          >
+            <div className="flex h-[66px] w-[66px] items-center justify-center rounded-[22px] border border-white/10 bg-white text-2xl font-black text-black shadow-2xl shadow-black/30">
+              {initials}
+            </div>
 
-            <Card
-              icon={<Palette />}
-              title="Apparence"
-              description="Préférences visuelles de l'application."
-            >
-              <select
-                value={theme}
-                onChange={(e) => setTheme(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm outline-none"
-              >
-                <option>Sombre</option>
-                <option>Clair</option>
-                <option>Système</option>
-              </select>
-            </Card>
+            <div className="min-w-0">
+              <h2 className="truncate text-xl font-semibold">{userName}</h2>
+
+              <p className="mt-1 truncate text-sm text-white/40">
+                {userEmail || "Compte personnel"}
+              </p>
+            </div>
+          </Link>
+
+          <section className="rounded-[30px] border border-white/10 bg-white/[0.035] p-3 shadow-2xl shadow-black/20 backdrop-blur-xl">
+            <div className="space-y-2">
+              {settingsItems.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="group flex items-center justify-between rounded-[22px] px-4 py-4 transition hover:bg-white/[0.07]"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-black/20 text-white/65 transition group-hover:border-white/20 group-hover:bg-white/[0.07] group-hover:text-white">
+                        <Icon size={18} />
+                      </div>
+
+                      <div>
+                        <h3 className="text-base font-semibold text-white">
+                          {item.title}
+                        </h3>
+
+                        <p className="mt-1 text-xs leading-5 text-white/35">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+
+                    <ChevronRight
+                      size={18}
+                      className="text-white/25 transition group-hover:translate-x-1 group-hover:text-white"
+                    />
+                  </Link>
+                );
+              })}
+            </div>
           </section>
 
-          <aside className="space-y-6">
-            <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6">
-              <div className="h-20 w-20 rounded-3xl bg-blue-600 flex items-center justify-center text-3xl font-black mb-5">
-                {user?.email?.charAt(0)?.toUpperCase() || "U"}
-              </div>
-
-              <h2 className="text-xl font-black">
-                {user?.email || "Utilisateur"}
-              </h2>
-
-              <p className="text-sm text-slate-500 mt-2">
-                Compte connecté à Supabase.
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6">
-              <Shield className="text-blue-400 mb-4" />
-              <h2 className="text-xl font-black">Sécurité</h2>
-              <p className="text-sm text-slate-500 mt-2">
-                Ton compte est protégé par Supabase Auth.
-              </p>
-            </div>
-
-            <button
-              onClick={saveSettings}
-              className="w-full rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold hover:bg-blue-500 transition flex items-center justify-center gap-2"
-            >
-              <Save size={18} />
-              Sauvegarder
-            </button>
-
-            <button
-              onClick={logout}
-              className="w-full rounded-2xl bg-red-500/10 px-5 py-3 text-sm font-bold text-red-400 hover:bg-red-500/20 transition flex items-center justify-center gap-2"
-            >
-              <LogOut size={18} />
-              Déconnexion
-            </button>
-
-            {message && (
-              <p className="rounded-2xl bg-green-500/10 text-green-400 p-3 text-sm text-center">
-                {message}
-              </p>
-            )}
-          </aside>
+          <p className="mt-6 text-center text-xs leading-5 text-white/30">
+            Les préférences sont sauvegardées progressivement. Les thèmes et notifications sont stockés localement pour l’instant.
+          </p>
         </div>
       </section>
     </main>
-  );
-}
-
-function Card({
-  icon,
-  title,
-  description,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-6">
-      <div className="flex items-start gap-4 mb-6">
-        <div className="text-blue-400">{icon}</div>
-        <div>
-          <h2 className="text-xl font-black">{title}</h2>
-          <p className="text-sm text-slate-500 mt-1">{description}</p>
-        </div>
-      </div>
-
-      {children}
-    </div>
-  );
-}
-
-function Input({
-  label,
-  value,
-  readOnly,
-}: {
-  label: string;
-  value: string;
-  readOnly?: boolean;
-}) {
-  return (
-    <label className="block">
-      <p className="mb-2 text-sm text-slate-400">{label}</p>
-      <input
-        value={value}
-        readOnly={readOnly}
-        className="w-full rounded-2xl border border-white/10 bg-slate-950 px-4 py-3 text-sm outline-none text-slate-300"
-      />
-    </label>
   );
 }

@@ -1,4 +1,8 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
+
+/* =========================================================
+   RESET GLOBAL
+========================================================= */
 
 * {
   box-sizing: border-box;
@@ -7,90 +11,662 @@
 html,
 body {
   margin: 0;
-  padding: 0;
-  background: #020617;
+  min-height: 100vh;
+  background: #030712;
   color: white;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter",
-    "Segoe UI", sans-serif;
 }
 
 body {
-  background:
-    radial-gradient(circle at top left, rgba(59, 130, 246, 0.18), transparent 30%),
-    radial-gradient(circle at bottom right, rgba(168, 85, 247, 0.14), transparent 30%),
-    #020617;
+  overflow-x: hidden;
+  font-feature-settings: "rlig" 1, "calt" 1;
 }
 
 button,
 input,
-select,
-textarea {
-  font-family: inherit;
+textarea,
+select {
+  font: inherit;
 }
 
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.22);
+  color: white;
+}
+
+/* =========================================================
+   VARIABLES PREMIUM
+========================================================= */
+
+:root {
+  --app-bg-1: #030712;
+  --app-bg-2: #02040a;
+  --app-bg-3: #000000;
+
+  --glass-bg: rgba(15, 23, 42, 0.66);
+  --glass-bg-hover: rgba(24, 33, 52, 0.82);
+
+  --glass-border: rgba(255, 255, 255, 0.105);
+  --glass-border-hover: rgba(255, 255, 255, 0.28);
+
+  --glass-shadow: rgba(0, 0, 0, 0.38);
+  --glass-shadow-hover: rgba(0, 0, 0, 0.52);
+
+  --white-glow: rgba(255, 255, 255, 0.09);
+  --blue-glow: rgba(96, 165, 250, 0.06);
+}
+
+/* =========================================================
+   BACKGROUND PREMIUM
+========================================================= */
+
+body,
+main {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.045), transparent 28%),
+    radial-gradient(circle at 86% 10%, rgba(96, 165, 250, 0.055), transparent 34%),
+    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.025), transparent 34%),
+    linear-gradient(180deg, var(--app-bg-1) 0%, var(--app-bg-2) 46%, var(--app-bg-3) 100%) !important;
+}
+
+/* =========================================================
+   SCROLLBAR PREMIUM
+========================================================= */
+
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #020617;
+  background: rgba(255, 255, 255, 0.025);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.16);
   border-radius: 999px;
+  border: 2px solid #030712;
 }
 
-.glass {
-  background: rgba(15, 23, 42, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(22px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28);
 }
 
-.card-hover {
-  transition: 0.25s ease;
+/* =========================================================
+   APPLE GLASS BASE
+========================================================= */
+
+.glass,
+.glass-card,
+.sidebar-glass {
+  border: 1px solid var(--glass-border);
+  background:
+    radial-gradient(circle at 16% 0%, rgba(255, 255, 255, 0.08), transparent 34%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.075),
+      rgba(255, 255, 255, 0.018)
+    ),
+    var(--glass-bg);
+  backdrop-filter: blur(26px) saturate(145%);
+  -webkit-backdrop-filter: blur(26px) saturate(145%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px var(--glass-shadow),
+    0 0 34px var(--white-glow);
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
 }
 
-.card-hover:hover {
-  transform: translateY(-4px);
-  border-color: rgba(255, 255, 255, 0.18);
-  background: rgba(30, 41, 59, 0.72);
-}
-
-.soft-button {
-  transition: 0.2s ease;
-}
-
-.soft-button:hover {
-  transform: translateY(-1px) scale(1.01);
-}
-
-.soft-button:active {
-  transform: scale(0.97);
-}
-.glass-card {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(28px);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.38);
-  transition: all 0.25s ease;
-}
-
+.glass:hover,
 .glass-card:hover {
-  transform: translateY(-4px);
-  background: rgba(255, 255, 255, 0.065);
-  border-color: rgba(255, 255, 255, 0.14);
+  transform: translateY(-4px) scale(1.01);
+  border-color: var(--glass-border-hover);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.11), transparent 36%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.09),
+      rgba(255, 255, 255, 0.026)
+    ),
+    var(--glass-bg-hover);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 34px 90px var(--glass-shadow-hover),
+    0 0 46px rgba(255, 255, 255, 0.1);
 }
 
-.soft-button {
-  transition: all 0.2s ease;
+/* =========================================================
+   FORCE PREMIUM SUR LES BLOCS DU SITE
+   Reprend les cartes Tailwind sans casser la structure
+========================================================= */
+
+main section[class*="rounded-"][class*="border"],
+main div[class*="rounded-"][class*="border"],
+main article[class*="rounded-"][class*="border"] {
+  border-color: var(--glass-border) !important;
+
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.07), transparent 35%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.065),
+      rgba(255, 255, 255, 0.016)
+    ),
+    rgba(15, 23, 42, 0.64) !important;
+
+  backdrop-filter: blur(24px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(145%) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 22px 62px rgba(0, 0, 0, 0.34),
+    0 0 24px rgba(255, 255, 255, 0.035) !important;
+
+  transform: translateZ(0) scale(1);
+  will-change: transform, box-shadow, border-color, background;
+
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease !important;
 }
 
-.soft-button:hover {
-  transform: translateY(-1px);
+main section[class*="rounded-"][class*="border"]:hover,
+main div[class*="rounded-"][class*="border"]:hover,
+main article[class*="rounded-"][class*="border"]:hover {
+  transform: translateY(-4px) scale(1.01) !important;
+
+  border-color: var(--glass-border-hover) !important;
+
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.105), transparent 36%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.085),
+      rgba(255, 255, 255, 0.024)
+    ),
+    rgba(25, 35, 56, 0.78) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.11),
+    0 32px 86px rgba(0, 0, 0, 0.5),
+    0 0 44px rgba(255, 255, 255, 0.08) !important;
 }
 
-.soft-button:active {
-  transform: scale(0.97);
+/* Évite que le layout principal ou les wrappers énormes bougent trop */
+main,
+main > section,
+aside {
+  transform: none;
+}
+
+main > section:hover,
+aside:hover {
+  transform: none !important;
+}
+
+/* =========================================================
+   SIDEBAR PREMIUM + TRAIT FIN
+========================================================= */
+
+aside,
+.sidebar-glass {
+  border: 1px solid var(--glass-border) !important;
+
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.06), transparent 32%),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.055),
+      rgba(255, 255, 255, 0.012)
+    ),
+    rgba(3, 7, 18, 0.86) !important;
+
+  backdrop-filter: blur(28px) saturate(150%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(150%) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 28px 80px rgba(0, 0, 0, 0.48),
+    0 0 40px rgba(255, 255, 255, 0.045) !important;
+}
+
+aside a,
+aside button {
+  transition:
+    transform 190ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 190ms ease,
+    border-color 190ms ease,
+    color 190ms ease,
+    opacity 190ms ease !important;
+}
+
+aside a:hover,
+aside button:hover {
+  transform: translateX(4px) scale(1.012) !important;
+  background: rgba(255, 255, 255, 0.075) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+/* =========================================================
+   BOUTONS PREMIUM
+========================================================= */
+
+button,
+a {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    opacity 180ms ease !important;
+}
+
+main button:hover,
+main a:hover {
+  transform: translateY(-2px) scale(1.018);
+}
+
+button.bg-white,
+a.bg-white {
+  background: linear-gradient(135deg, #ffffff, #eef2ff) !important;
+  color: #020617 !important;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.25),
+    0 0 24px rgba(255, 255, 255, 0.08) !important;
+}
+
+button.bg-white:hover,
+a.bg-white:hover {
+  background: linear-gradient(135deg, #ffffff, #dbeafe) !important;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.36),
+    0 0 34px rgba(255, 255, 255, 0.14) !important;
+}
+
+/* =========================================================
+   INPUTS PREMIUM
+========================================================= */
+
+.field,
+input,
+textarea,
+select {
+  color: white;
+}
+
+.field,
+input[class*="bg-white/"],
+input[class*="bg-black/"],
+input[class*="bg-slate"],
+textarea[class*="bg-white/"],
+textarea[class*="bg-black/"],
+select[class*="bg-white/"],
+select[class*="bg-black/"],
+select[class*="bg-slate"] {
+  border-color: var(--glass-border) !important;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.055),
+      rgba(255, 255, 255, 0.015)
+    ),
+    rgba(0, 0, 0, 0.22) !important;
+
+  backdrop-filter: blur(18px) saturate(135%) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(135%) !important;
+
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background 180ms ease !important;
+}
+
+.field {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--glass-border);
+  padding: 12px 14px;
+  font-size: 14px;
+  outline: none;
+}
+
+.field::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.field:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  transform: scale(1.006);
+  border-color: rgba(255, 255, 255, 0.28) !important;
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, 0.055),
+    0 0 30px rgba(255, 255, 255, 0.06) !important;
+  outline: none;
+}
+
+.field option,
+select option {
+  background: #030712;
+  color: white;
+}
+
+/* =========================================================
+   BADGES / PILLS
+========================================================= */
+
+main span[class*="rounded-full"] {
+  border-color: rgba(255, 255, 255, 0.095) !important;
+  backdrop-filter: blur(12px) saturate(135%);
+  -webkit-backdrop-filter: blur(12px) saturate(135%);
+}
+
+/* =========================================================
+   RECHARTS / GRAPH PREMIUM
+========================================================= */
+
+.recharts-wrapper,
+.recharts-surface {
+  overflow: visible;
+}
+
+.recharts-default-tooltip {
+  background: rgba(3, 7, 18, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45) !important;
+}
+
+/* =========================================================
+   REACT BIG CALENDAR PREMIUM
+========================================================= */
+
+.rbc-calendar {
+  color: white;
+}
+
+.rbc-toolbar {
+  margin-bottom: 18px;
+}
+
+.rbc-toolbar button {
+  color: rgba(255, 255, 255, 0.75) !important;
+  border: 1px solid var(--glass-border) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border-radius: 14px !important;
+  padding: 8px 14px !important;
+  transition: all 0.2s ease !important;
+}
+
+.rbc-toolbar button:hover,
+.rbc-toolbar button.rbc-active {
+  transform: translateY(-1px) scale(1.02);
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: white !important;
+  border-color: var(--glass-border-hover) !important;
+}
+
+.rbc-month-view,
+.rbc-time-view,
+.rbc-agenda-view {
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 28px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.07), transparent 35%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.055),
+      rgba(255, 255, 255, 0.016)
+    ),
+    rgba(15, 23, 42, 0.58) !important;
+  backdrop-filter: blur(24px) saturate(145%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(145%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(0, 0, 0, 0.36) !important;
+}
+
+.rbc-header,
+.rbc-time-header,
+.rbc-day-bg,
+.rbc-time-content,
+.rbc-timeslot-group,
+.rbc-month-row,
+.rbc-date-cell,
+.rbc-time-slot {
+  border-color: rgba(255, 255, 255, 0.065) !important;
+}
+
+.rbc-off-range-bg {
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+.rbc-today {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.rbc-event {
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.22) !important;
+  color: white !important;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.28),
+    0 0 20px rgba(255, 255, 255, 0.06) !important;
+}
+
+.rbc-event-content {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rbc-show-more {
+  color: white !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.rbc-agenda-table {
+  color: white !important;
+}
+
+.rbc-agenda-date-cell,
+.rbc-agenda-time-cell,
+.rbc-agenda-event-cell {
+  border-color: rgba(255, 255, 255, 0.075) !important;
+}
+/* =========================================================
+   FINAL THEME FIX — NOIR PREMIUM / BLEU FONCÉ + COMPACT
+========================================================= */
+
+/* Le site paraît moins zoomé à 100% */
+html {
+  font-size: 15px;
+}
+
+/* Thème noir par défaut */
+html[data-theme="black"],
+html:not([data-theme]) {
+  --app-bg-1: #020307;
+  --app-bg-2: #010205;
+  --app-bg-3: #000000;
+
+  --glass-bg: rgba(10, 14, 24, 0.72);
+  --glass-bg-hover: rgba(17, 23, 36, 0.82);
+
+  --glass-border: rgba(255, 255, 255, 0.105);
+  --glass-border-hover: rgba(255, 255, 255, 0.24);
+
+  --theme-glow: rgba(255, 255, 255, 0.055);
+}
+
+/* Thème bleu foncé */
+html[data-theme="blueglass"] {
+  --app-bg-1: #010716;
+  --app-bg-2: #020b1d;
+  --app-bg-3: #00040d;
+
+  --glass-bg: rgba(5, 14, 32, 0.74);
+  --glass-bg-hover: rgba(8, 22, 48, 0.84);
+
+  --glass-border: rgba(58, 92, 150, 0.24);
+  --glass-border-hover: rgba(96, 130, 190, 0.38);
+
+  --theme-glow: rgba(20, 48, 95, 0.16);
+}
+
+/* Fond noir premium */
+html[data-theme="black"] body,
+html[data-theme="black"] main,
+html:not([data-theme]) body,
+html:not([data-theme]) main {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.035), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(255, 255, 255, 0.022), transparent 34%),
+    linear-gradient(180deg, #020307 0%, #010205 46%, #000000 100%) !important;
+}
+
+/* Fond bleu vraiment foncé, pas bleu clair */
+html[data-theme="blueglass"] body,
+html[data-theme="blueglass"] main {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(30, 64, 130, 0.16), transparent 28%),
+    radial-gradient(circle at 88% 12%, rgba(15, 35, 80, 0.13), transparent 34%),
+    linear-gradient(180deg, #010716 0%, #020b1d 46%, #00040d 100%) !important;
+}
+
+/* Verre plus sombre */
+main section[class*="rounded-"][class*="border"],
+main div[class*="rounded-"][class*="border"],
+main article[class*="rounded-"][class*="border"],
+.sidebar-glass,
+aside {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.055), transparent 34%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.055),
+      rgba(255, 255, 255, 0.014)
+    ),
+    var(--glass-bg) !important;
+
+  border-color: var(--glass-border) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.065),
+    0 20px 58px rgba(0, 0, 0, 0.42),
+    0 0 26px var(--theme-glow) !important;
+}
+
+/* Hover plus discret, moins zoomé */
+main section[class*="rounded-"][class*="border"]:hover,
+main div[class*="rounded-"][class*="border"]:hover,
+main article[class*="rounded-"][class*="border"]:hover {
+  transform: translateY(-2px) scale(1.004) !important;
+
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.075), transparent 35%),
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.018)
+    ),
+    var(--glass-bg-hover) !important;
+
+  border-color: var(--glass-border-hover) !important;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.085),
+    0 26px 70px rgba(0, 0, 0, 0.5),
+    0 0 34px var(--theme-glow) !important;
+}
+
+/* Boutons moins gros visuellement */
+main button:hover,
+main a:hover {
+  transform: translateY(-1px) scale(1.008) !important;
+}
+
+/* Sidebar : bleu foncé plus sobre */
+html[data-theme="black"] aside,
+html[data-theme="black"] .sidebar-glass {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(19, 12, 0, 0.12), transparent %),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.045),
+      rgba(255, 255, 255, 0.01)
+    ),
+    rgba(1, 7, 22, 0.88) !important;
+}
+
+/* Boutons blancs moins bleu clair */
+html[data-theme="blueglass"] button.bg-white,
+html[data-theme="blueglass"] a.bg-white {
+  background: linear-gradient(135deg, #ffffff, #d8e4ff) !important;
+}
+
+/* Graph : éviter le bleu flashy */
+html[data-theme="blueglass"] .recharts-line path {
+  filter: none !important;
+}
+/* =========================================================
+   CALENDAR TASK COLORS RESTORE
+   Remet les couleurs des tâches dans le calendrier
+========================================================= */
+
+main [style*="inset 4px 0 0"],
+main [style*="inset 3px 0 0"] {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.09),
+      rgba(255, 255, 255, 0.025)
+    ),
+    rgba(0, 0, 0, 0.24) !important;
+
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+main [style*="inset 4px 0 0"]:hover,
+main [style*="inset 3px 0 0"]:hover {
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.13),
+      rgba(255, 255, 255, 0.04)
+    ),
+    rgba(0, 0, 0, 0.32) !important;
+}
+
+/* Ne pas écraser les petits points de couleur des projets */
+main span[style*="background-color"],
+main div[style*="background-color"] {
+  background-color: inherit;
+}
+
+/* Les événements du calendrier gardent leur barre couleur */
+main [style*="box-shadow"] {
+  box-shadow: inherit;
 }
