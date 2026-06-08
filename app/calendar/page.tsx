@@ -1,8 +1,8 @@
 "use client";
 
 import Sidebar from "@/components/Sidebar";
-import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ChevronLeft,
@@ -91,13 +91,54 @@ function durationMinutes(task: any) {
   return Math.max(duration, 40);
 }
 
+function hourFromSlot(hour: number) {
+  return `${String(hour).padStart(2, "0")}:00`;
+}
+
+function normalizeColor(color: string | null | undefined) {
+  if (!color) return "#64748b";
+
+  const value = String(color).trim();
+
+  const map: Record<string, string> = {
+    red: "#ef4444",
+    rouge: "#ef4444",
+    blue: "#3b82f6",
+    bleu: "#3b82f6",
+    green: "#22c55e",
+    vert: "#22c55e",
+    yellow: "#eab308",
+    jaune: "#eab308",
+    orange: "#f97316",
+    purple: "#8b5cf6",
+    violet: "#8b5cf6",
+    gray: "#64748b",
+    gris: "#64748b",
+    black: "#111827",
+    noir: "#111827",
+  };
+
+  if (map[value.toLowerCase()]) return map[value.toLowerCase()];
+
+  return value;
+}
+
 function getProject(task: any, projects: any[]) {
   return projects.find((p) => p.id === task.project_id) || null;
 }
 
 function getTaskColor(task: any, projects: any[]) {
   const project = getProject(task, projects);
-  return project?.color || task.color || "#64748b";
+
+  return normalizeColor(
+    task.color ||
+      task.color_hex ||
+      task.task_color ||
+      project?.color ||
+      project?.color_hex ||
+      project?.project_color ||
+      "#64748b"
+  );
 }
 
 function getProjectName(task: any, projects: any[]) {
@@ -105,14 +146,21 @@ function getProjectName(task: any, projects: any[]) {
   return project?.name || task.category || "Personnel";
 }
 
+function isDone(task: any) {
+  return task.done === true || task.status === "done";
+}
+
 export default function CalendarPage() {
   const today = new Date();
 
+  const [user, setUser] = useState<any>(null);
   const [view, setView] = useState<CalendarView>("week");
   const [currentDate, setCurrentDate] = useState(today);
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dropMessage, setDropMessage] = useState("");
 
   useEffect(() => {
     loadData();
@@ -139,6 +187,8 @@ export default function CalendarPage() {
       return;
     }
 
+    setUser(currentUser);
+
     const { data: taskData, error: taskError } = await supabase
       .from("tasks")
       .select("*")
@@ -161,6 +211,67 @@ export default function CalendarPage() {
     setTasks(taskData || []);
     setProjects(projectData || []);
     setLoading(false);
+  }
+
+  async function moveTask(taskId: string, newDate: string, newHour?: string) {
+    if (!user) return;
+
+    const payload: any = {
+      due_date: newDate,
+      date: newDate,
+    };
+
+    if (newHour) {
+      payload.hour = newHour;
+      payload.start_time = newHour;
+    }
+
+    const { error } = await supabase
+      .from("tasks")
+      .update(payload)
+      .eq("id", taskId)
+      .eq("user_id", user.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setDropMessage(
+      newHour
+        ? `Tâche déplacée au ${newDate} à ${newHour}.`
+        : `Tâche déplacée au ${newDate}.`
+    );
+
+    setTimeout(() => setDropMessage(""), 2500);
+
+    setDraggedTaskId(null);
+    await loadData();
+  }
+
+  function handleDragStart(e: React.DragEvent, taskId: string) {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.setData("text/plain", taskId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }
+
+  async function handleDrop(
+    e: React.DragEvent,
+    newDate: string,
+    newHour?: string
+  ) {
+    e.preventDefault();
+
+    const taskId = e.dataTransfer.getData("text/plain") || draggedTaskId;
+
+    if (!taskId) return;
+
+    await moveTask(taskId, newDate, newHour);
   }
 
   function goPrevious() {
@@ -271,6 +382,12 @@ export default function CalendarPage() {
             </div>
           </header>
 
+          {dropMessage && (
+            <div className="mb-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+              {dropMessage}
+            </div>
+          )}
+
           <section className="mb-6 flex items-center justify-between rounded-[28px] border border-white/10 bg-white/[0.035] p-4">
             <div className="flex items-center gap-3">
               <CalendarDays size={18} className="text-white/45" />
@@ -304,6 +421,9 @@ export default function CalendarPage() {
               tasks={tasks}
               projects={projects}
               today={today}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
             />
           )}
 
@@ -313,6 +433,9 @@ export default function CalendarPage() {
               tasks={tasks}
               projects={projects}
               today={today}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
             />
           )}
 
@@ -362,11 +485,17 @@ function WeekView({
   tasks,
   projects,
   today,
+  onDragStart,
+  onDragOver,
+  onDrop,
 }: {
   weekDates: Date[];
   tasks: any[];
   projects: any[];
   today: Date;
+  onDragStart: (e: React.DragEvent, taskId: string) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, newDate: string, newHour?: string) => void;
 }) {
   const todayKey = dateKey(today);
 
@@ -384,6 +513,8 @@ function WeekView({
           return (
             <div
               key={key}
+              onDragOver={onDragOver}
+              onDrop={(e) => onDrop(e, key, "08:00")}
               className={`border-r border-white/10 p-4 text-center last:border-r-0 ${
                 isToday ? "bg-white/[0.06]" : ""
               }`}
@@ -427,7 +558,9 @@ function WeekView({
               {hours.map((hour) => (
                 <div
                   key={hour}
-                  className="border-b border-white/5"
+                  onDragOver={onDragOver}
+                  onDrop={(e) => onDrop(e, key, hourFromSlot(hour))}
+                  className="border-b border-white/5 transition hover:bg-white/[0.04]"
                   style={{ height: SLOT_HEIGHT }}
                 />
               ))}
@@ -447,15 +580,22 @@ function WeekView({
                 return (
                   <div
                     key={task.id}
-                    className="absolute left-2 right-2 overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-3 pl-5 shadow-xl shadow-black/30 transition hover:z-20 hover:scale-[1.025] hover:bg-white/[0.075]"
+                    draggable
+                    onDragStart={(e) => onDragStart(e, task.id)}
+                    className={`absolute left-2 right-2 cursor-grab overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-3 pl-5 shadow-xl shadow-black/30 transition active:cursor-grabbing hover:z-20 hover:scale-[1.025] hover:bg-white/[0.075] ${
+                      isDone(task) ? "opacity-55" : ""
+                    }`}
                     style={{
                       top,
                       height,
                     }}
                   >
                     <span
-                      className="absolute left-0 top-0 h-full w-[5px]"
-                      style={{ backgroundColor: color }}
+                      className="absolute left-0 top-0 z-20 h-full w-[6px] rounded-l-2xl"
+                      style={{
+                        backgroundColor: color,
+                        boxShadow: `0 0 18px ${color}`,
+                      }}
                     />
 
                     <div className="flex items-start justify-between gap-2">
@@ -490,11 +630,17 @@ function MonthView({
   tasks,
   projects,
   today,
+  onDragStart,
+  onDragOver,
+  onDrop,
 }: {
   currentDate: Date;
   tasks: any[];
   projects: any[];
   today: Date;
+  onDragStart: (e: React.DragEvent, taskId: string) => void;
+  onDragOver: (e: React.DragEvent) => void;
+  onDrop: (e: React.DragEvent, newDate: string, newHour?: string) => void;
 }) {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -532,6 +678,8 @@ function MonthView({
           return (
             <div
               key={key}
+              onDragOver={onDragOver}
+              onDrop={(e) => onDrop(e, key, "08:00")}
               className={`min-h-[155px] border border-white/5 p-3 transition hover:bg-white/[0.055] ${
                 !isCurrentMonth ? "opacity-35" : ""
               }`}
@@ -559,11 +707,18 @@ function MonthView({
                   return (
                     <div
                       key={task.id}
-                      className="relative overflow-hidden rounded-xl border border-white/10 bg-black/30 p-2 pl-4 text-xs transition hover:bg-white/[0.075]"
+                      draggable
+                      onDragStart={(e) => onDragStart(e, task.id)}
+                      className={`relative cursor-grab overflow-hidden rounded-xl border border-white/10 bg-black/30 p-2 pl-4 text-xs transition active:cursor-grabbing hover:bg-white/[0.075] ${
+                        isDone(task) ? "opacity-55" : ""
+                      }`}
                     >
                       <span
-                        className="absolute left-0 top-0 h-full w-[4px]"
-                        style={{ backgroundColor: color }}
+                        className="absolute left-0 top-0 z-20 h-full w-[5px]"
+                        style={{
+                          backgroundColor: color,
+                          boxShadow: `0 0 14px ${color}`,
+                        }}
                       />
 
                       <p className="truncate font-semibold">
@@ -629,9 +784,7 @@ function YearView({
           return taskYear === year && taskMonth === monthItem.month + 1;
         });
 
-        const doneCount = monthTasks.filter(
-          (task) => task.done || task.status === "done"
-        ).length;
+        const doneCount = monthTasks.filter(isDone).length;
 
         const progress =
           monthTasks.length > 0
@@ -677,7 +830,10 @@ function YearView({
                   <span
                     key={color}
                     className="h-3 w-3 rounded-full ring-2 ring-white/10"
-                    style={{ backgroundColor: color }}
+                    style={{
+                      backgroundColor: color,
+                      boxShadow: `0 0 12px ${color}`,
+                    }}
                   />
                 ))}
               </div>
@@ -700,8 +856,11 @@ function YearView({
                     className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/30 p-3 pl-5 text-sm transition group-hover:bg-white/[0.055]"
                   >
                     <span
-                      className="absolute left-0 top-0 h-full w-[5px]"
-                      style={{ backgroundColor: color }}
+                      className="absolute left-0 top-0 z-20 h-full w-[5px]"
+                      style={{
+                        backgroundColor: color,
+                        boxShadow: `0 0 14px ${color}`,
+                      }}
                     />
 
                     <div className="flex items-center justify-between gap-3">
@@ -721,7 +880,10 @@ function YearView({
                     <div className="mt-2 flex items-center gap-2 text-xs text-white/35">
                       <span
                         className="h-2 w-2 rounded-full"
-                        style={{ backgroundColor: color }}
+                        style={{
+                          backgroundColor: color,
+                          boxShadow: `0 0 10px ${color}`,
+                        }}
                       />
 
                       <FolderKanban size={12} />
