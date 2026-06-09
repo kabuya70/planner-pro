@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -37,11 +37,11 @@ export default function DebugPage() {
     await supabase.auth.signOut({ scope: "global" });
     localStorage.clear();
     sessionStorage.clear();
-    window.location.href = "/login";
+    return null;
   }
 
   return (
-    <main className="min-h-screen bg-black p-8 text-white">
+    <main className="min-h-scréen bg-black p-8 text-white">
       <h1 className="text-3xl font-bold">Debug Auth</h1>
 
       <button
@@ -76,3 +76,4 @@ export default function DebugPage() {
     </main>
   );
 }
+

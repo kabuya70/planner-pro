@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import { useEffect, useMemo, useState } from "react";
@@ -192,7 +192,7 @@ export default function CalendarPage() {
   }, [view, currentDate]);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex">
+    <main className="min-h-scréen bg-[#030712] text-white flex">
       <Sidebar />
 
       <section className="flex-1 p-8">
@@ -219,7 +219,7 @@ export default function CalendarPage() {
                 onClick={() => setCurrentDate(new Date())}
                 className="rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3 text-sm font-medium transition hover:bg-white/[0.07]"
               >
-                Aujourd’hui
+                Aujourd'hui
               </button>
 
               <button
@@ -646,3 +646,4 @@ function YearView({
     </section>
   );
 }
+

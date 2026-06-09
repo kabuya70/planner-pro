@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { createClient } from "@supabase/supabase-js";
-import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,33 +12,31 @@ const supabase = createClient(
 const publicRoutes = ["/login", "/register"];
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
+    let active = true;
 
     async function checkAuth() {
-      const isPublicRoute = publicRoutes.some(
-        (route) => pathname === route || pathname.startsWith(`${route}/`)
-      );
-
       const { data } = await supabase.auth.getSession();
       const session = data.session;
 
-      if (!mounted) return;
+      const isPublicRoute = publicRoutes.some((route) =>
+        pathname.startsWith(route)
+      );
+
+      if (!active) return;
 
       if (!session && !isPublicRoute) {
         router.replace("/login");
-        setChecking(false);
         return;
       }
 
       if (session && isPublicRoute) {
         router.replace("/dashboard");
-        setChecking(false);
         return;
       }
 
@@ -50,29 +48,33 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      const isPublicRoute = publicRoutes.some(
-        (route) => pathname === route || pathname.startsWith(`${route}/`)
+      const isPublicRoute = publicRoutes.some((route) =>
+        pathname.startsWith(route)
       );
 
       if (!session && !isPublicRoute) {
         router.replace("/login");
+        return;
       }
 
       if (session && isPublicRoute) {
         router.replace("/dashboard");
+        return;
       }
+
+      setChecking(false);
     });
 
     return () => {
-      mounted = false;
+      active = false;
       subscription.unsubscribe();
     };
   }, [pathname, router]);
 
   if (checking) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#030712] text-white">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.035] px-8 py-6 text-sm text-white/45 shadow-2xl shadow-black/30 backdrop-blur-2xl">
+      <main className="flex min-h-scréen items-center justify-center bg-[#030712] text-white">
+        <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-5 text-sm text-white/45">
           Vérification de la session...
         </div>
       </main>
@@ -81,3 +83,4 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   return <>{children}</>;
 }
+

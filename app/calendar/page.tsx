@@ -1,15 +1,20 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import { createClient } from "@supabase/supabase-js";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
   FolderKanban,
   CheckCircle2,
+  Circle,
+  Save,
+  Trash2,
+  X,
+  Repeat,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -18,24 +23,27 @@ const supabase = createClient(
 );
 
 const SLOT_HEIGHT = 76;
-const hours = Array.from({ length: 15 }, (_, i) => i + 7);
+const START_HOUR = 7;
+const hours = Array.from({ length: 15 }, (_, i) => i + START_HOUR);
 
 const weekLabels = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"];
 
 const monthNames = [
   "Janvier",
-  "Fevrier",
+  "Février",
   "Mars",
   "Avril",
   "Mai",
   "Juin",
   "Juillet",
-  "Aout",
+  "Août",
   "Septembre",
   "Octobre",
   "Novembre",
-  "Decembre",
+  "Décembre",
 ];
+
+const priorityOptions = ["Basse", "Normale", "Importante", "Urgente"];
 
 function dateKey(date: Date) {
   const y = date.getFullYear();
@@ -92,8 +100,24 @@ function formatShortDate(value: Date) {
   return `${d}/${m}/${y}`;
 }
 
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Sans date";
+
+  const clean = String(value).slice(0, 10);
+  const parts = clean.split("-");
+
+  if (parts.length !== 3) return clean;
+
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+}
+
+function todayLocal() {
+  return dateKey(new Date());
+}
+
 function getTaskDate(task: any) {
-  const value = task?.due_date || task?.date || task?.deadline;
+  const value = task?.due_date || task?.date;
   if (!value) return "";
 
   return String(value).slice(0, 10);
@@ -103,31 +127,59 @@ function getTaskHour(task: any) {
   if (task?.hour) return String(task.hour).slice(0, 5);
   if (task?.start_time) return String(task.start_time).slice(0, 5);
 
-  return "";
+  return "08:00";
+}
+
+function addMinutes(hour: string, minutes: number) {
+  const [h, m] = hour.split(":").map(Number);
+
+  const d = new Date();
+  d.setHours(h || 0, m || 0, 0, 0);
+  d.setMinutes(d.getMinutes() + minutes);
+
+  return `${String(d.getHours()).padStart(2, "0")}:${String(
+    d.getMinutes()
+  ).padStart(2, "0")}`;
 }
 
 function getTaskEndHour(task: any) {
   if (task?.end_time) return String(task.end_time).slice(0, 5);
 
   const start = getTaskHour(task);
-  if (!start) return "";
+  if (!start) return "09:00";
 
-  const [h, m] = start.split(":").map(Number);
+  return addMinutes(start, 60);
+}
 
-  const endDate = new Date();
-  endDate.setHours(h + 1, m || 0, 0, 0);
+function hourToMinutes(hour: string) {
+  const [h, m] = hour.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
 
-  return `${String(endDate.getHours()).padStart(2, "0")}:${String(
-    endDate.getMinutes()
-  ).padStart(2, "0")}`;
+function getTaskDurationMinutes(task: any) {
+  const start = getTaskHour(task);
+  const end = getTaskEndHour(task);
+
+  const startMinutes = hourToMinutes(start);
+  const endMinutes = hourToMinutes(end);
+
+  if (endMinutes <= startMinutes) return 60;
+
+  return endMinutes - startMinutes;
 }
 
 function minutesFromStart(hour: string) {
-  if (!hour) return 60;
+  if (!hour) return SLOT_HEIGHT;
 
   const [h, m] = hour.split(":").map(Number);
 
-  return (h - 7) * SLOT_HEIGHT + ((m || 0) / 60) * SLOT_HEIGHT;
+  return (h - START_HOUR) * SLOT_HEIGHT + ((m || 0) / 60) * SLOT_HEIGHT;
+}
+
+function getTaskHeight(task: any) {
+  const duration = getTaskDurationMinutes(task);
+
+  return Math.max(48, (duration / 60) * SLOT_HEIGHT - 8);
 }
 
 function hourFromSlot(hour: number) {
@@ -186,6 +238,14 @@ function isDone(task: any) {
   return task?.done === true || task?.status === "done";
 }
 
+function isRoutine(task: any) {
+  return (
+    task?.type === "routine" ||
+    task?.repeat_rule === "daily" ||
+    task?.category === "Routine"
+  );
+}
+
 function taskTitle(task: any) {
   return task?.name || task?.title || "Sans titre";
 }
@@ -197,15 +257,59 @@ function isSameMonth(date: Date, current: Date) {
   );
 }
 
+function routineDoneForDate(taskId: string, day: string, routineLogs: any[]) {
+  return routineLogs.some(
+    (log) =>
+      log.task_id === taskId &&
+      String(log.completed_date || log.date || "").slice(0, 10) === day
+  );
+}
+
+function shouldShowRoutineOnDate(task: any, day: string) {
+  const start = getTaskDate(task);
+  if (!start) return true;
+
+  return start <= day;
+}
+
+function getVisibleTasksForDate(tasks: any[], day: string, routineLogs: any[]) {
+  return tasks
+    .filter((task) => {
+      if (isRoutine(task)) return shouldShowRoutineOnDate(task, day);
+
+      return getTaskDate(task) === day;
+    })
+    .map((task) => {
+      if (!isRoutine(task)) return task;
+
+      return {
+        ...task,
+        calendar_date: day,
+        routine_done_today: routineDoneForDate(task.id, day, routineLogs),
+      };
+    });
+}
+
 export default function CalendarPage() {
-  const router = useRouter();
+  const [user, setUser] = useState<any>(null);
 
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [routineLogs, setRoutineLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [view, setView] = useState<"week" | "month" | "year">("week");
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editStart, setEditStart] = useState("08:00");
+  const [editEnd, setEditEnd] = useState("09:00");
+  const [editPriority, setEditPriority] = useState("Normale");
+  const [editStatus, setEditStatus] = useState("todo");
+  const [saving, setSaving] = useState(false);
 
   const weekDates = useMemo(() => {
     const start = startOfWeek(currentDate);
@@ -220,8 +324,23 @@ export default function CalendarPage() {
     loadData();
   }, []);
 
+  async function getCurrentUser() {
+    const { data: sessionData } = await supabase.auth.getSession();
+
+    if (sessionData.session?.user) {
+      return sessionData.session.user;
+    }
+
+    const { data: userData } = await supabase.auth.getUser();
+
+    return userData.user || null;
+  }
+
   async function loadData() {
     setLoading(true);
+
+    const currentUser = await getCurrentUser();
+    setUser(currentUser);
 
     const { data: tasksData, error: tasksError } = await supabase
       .from("tasks")
@@ -245,33 +364,219 @@ export default function CalendarPage() {
       return;
     }
 
+    const taskIds = (tasksData || []).map((task) => task.id);
+    let logsData: any[] = [];
+
+    if (taskIds.length > 0) {
+      const { data: logs } = await supabase
+        .from("routine_logs")
+        .select("*")
+        .in("task_id", taskIds);
+
+      logsData = logs || [];
+    }
+
     setTasks(tasksData || []);
     setProjects(projectsData || []);
+    setRoutineLogs(logsData);
     setLoading(false);
   }
 
   function openTaskFromCalendar(task: any) {
-    if (!task) return;
+    const day = task.calendar_date || getTaskDate(task) || todayLocal();
 
-    if (task.project_id) {
-      router.push(`/projects/${task.project_id}/tasks/${task.id}`);
+    setSelectedTask(task);
+    setEditName(taskTitle(task));
+    setEditDescription(task.description || "");
+    setEditDate(day);
+    setEditStart(getTaskHour(task));
+    setEditEnd(getTaskEndHour(task));
+    setEditPriority(task.priority || "Normale");
+    setEditStatus(task.status || (isDone(task) ? "done" : "todo"));
+  }
+
+  function closeTaskModal() {
+    setSelectedTask(null);
+    setEditName("");
+    setEditDescription("");
+    setEditDate("");
+    setEditStart("08:00");
+    setEditEnd("09:00");
+    setEditPriority("Normale");
+    setEditStatus("todo");
+  }
+
+  async function saveTaskFromModal() {
+    if (!selectedTask) return;
+
+    if (!editName.trim()) {
+      alert("Ajoute un nom de tâche.");
       return;
     }
 
-    router.push("/tasks");
+    if (editEnd <= editStart) {
+      alert("L'heure de fin doit être après l'heure de début.");
+      return;
+    }
+
+    setSaving(true);
+
+    const payload: any = {
+      name: editName.trim(),
+      description: editDescription.trim() || null,
+      due_date: editDate,
+      date: editDate,
+      hour: editStart,
+      start_time: editStart,
+      end_time: editEnd,
+      priority: editPriority,
+      status: editStatus,
+      done: editStatus === "done",
+    };
+
+    const { error } = await supabase
+      .from("tasks")
+      .update(payload)
+      .eq("id", selectedTask.id);
+
+    if (error) {
+      alert(error.message);
+      setSaving(false);
+      return;
+    }
+
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id !== selectedTask.id) return task;
+
+        return {
+          ...task,
+          ...payload,
+        };
+      })
+    );
+
+    setSaving(false);
+    closeTaskModal();
+  }
+
+  async function deleteSelectedTask() {
+    if (!selectedTask) return;
+
+    const ok = confirm("Supprimer cette tâche ?");
+    if (!ok) return;
+
+    await supabase.from("routine_logs").delete().eq("task_id", selectedTask.id);
+    await supabase.from("subtask_schedule").delete().eq("task_id", selectedTask.id);
+    await supabase.from("subtasks").delete().eq("task_id", selectedTask.id);
+
+    const { error } = await supabase
+      .from("tasks")
+      .delete()
+      .eq("id", selectedTask.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setTasks((prev) => prev.filter((task) => task.id !== selectedTask.id));
+    setRoutineLogs((prev) =>
+      prev.filter((log) => log.task_id !== selectedTask.id)
+    );
+    closeTaskModal();
+  }
+
+  async function toggleTaskDone(task: any, day?: string) {
+    if (isRoutine(task)) {
+      const currentDay = day || task.calendar_date || todayLocal();
+
+      const existing = routineLogs.find(
+        (log) =>
+          log.task_id === task.id &&
+          String(log.completed_date || log.date || "").slice(0, 10) ===
+            currentDay
+      );
+
+      if (existing) {
+        const { error } = await supabase
+          .from("routine_logs")
+          .delete()
+          .eq("id", existing.id);
+
+        if (error) {
+          alert(error.message);
+          return;
+        }
+
+        setRoutineLogs((prev) => prev.filter((log) => log.id !== existing.id));
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("routine_logs")
+        .insert({
+          task_id: task.id,
+          completed_date: currentDay,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (data) {
+        setRoutineLogs((prev) => [...prev, data]);
+      }
+
+      return;
+    }
+
+    const nextDone = !isDone(task);
+    const payload = {
+      done: nextDone,
+      status: nextDone ? "done" : "todo",
+    };
+
+    const { error } = await supabase
+      .from("tasks")
+      .update(payload)
+      .eq("id", task.id);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setTasks((prev) =>
+      prev.map((item) => {
+        if (item.id !== task.id) return item;
+
+        return {
+          ...item,
+          ...payload,
+        };
+      })
+    );
   }
 
   async function moveTask(taskId: string, newDate: string, newHour?: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (!task) return;
+
+    const start = newHour || getTaskHour(task);
+    const duration = getTaskDurationMinutes(task);
+    const end = addMinutes(start, duration);
+
     const payload: any = {
       due_date: newDate,
       date: newDate,
-      deadline: newDate,
+      hour: start,
+      start_time: start,
+      end_time: end,
     };
-
-    if (newHour) {
-      payload.hour = newHour;
-      payload.start_time = newHour;
-    }
 
     const { error } = await supabase
       .from("tasks")
@@ -331,7 +636,7 @@ export default function CalendarPage() {
     setCurrentDate(new Date());
   }
 
-  function handleDrop(e: React.DragEvent, newDate: string, newHour?: string) {
+  function handleDrop(e: DragEvent, newDate: string, newHour?: string) {
     e.preventDefault();
 
     const taskId = e.dataTransfer.getData("taskId");
@@ -383,14 +688,14 @@ export default function CalendarPage() {
 
               <h1 className="mt-4 text-4xl font-semibold tracking-tight">
                 {view === "year"
-                  ? "Agenda annee"
+                  ? "Agenda année"
                   : view === "month"
                   ? "Agenda mois"
                   : "Agenda semaine"}
               </h1>
 
               <p className="mt-3 text-base text-white/45">
-                Taches, routines, projets et planning horaire.
+                Tâches, routines, projets et planning horaire.
               </p>
             </div>
 
@@ -456,7 +761,7 @@ export default function CalendarPage() {
                       : "text-white/55 hover:text-white"
                   }`}
                 >
-                  Annee
+                  Année
                 </button>
               </div>
             </div>
@@ -497,9 +802,7 @@ export default function CalendarPage() {
 
                 {weekDates.map((date) => {
                   const key = dateKey(date);
-                  const dayTasks = tasks.filter(
-                    (task) => getTaskDate(task) === key
-                  );
+                  const dayTasks = getVisibleTasksForDate(tasks, key, routineLogs);
 
                   return (
                     <div
@@ -521,37 +824,61 @@ export default function CalendarPage() {
                         const end = getTaskEndHour(task);
                         const color = getTaskColor(task, projects);
                         const projectName = getProjectName(task, projects);
+                        const done = isRoutine(task)
+                          ? task.routine_done_today
+                          : isDone(task);
 
                         return (
                           <div
-                            key={task.id}
+                            key={`${task.id}-${key}`}
                             draggable
                             onClick={() => openTaskFromCalendar(task)}
                             onDragStart={(e) => {
                               e.dataTransfer.setData("taskId", task.id);
                             }}
                             className={`absolute left-2 right-2 z-10 cursor-pointer overflow-hidden rounded-xl px-3 py-2 text-xs text-white shadow-md transition hover:scale-[1.01] hover:bg-white/[0.08] ${
-                              isDone(task) ? "opacity-55" : ""
+                              done ? "opacity-55" : ""
                             }`}
                             style={{
                               top: `${minutesFromStart(start)}px`,
-                              minHeight: "48px",
+                              height: `${getTaskHeight(task)}px`,
                               background: "rgba(15, 23, 42, 0.72)",
                               borderLeft: `4px solid ${color}`,
                               borderTop: `2px solid ${color}`,
                               borderRight: "1px solid rgba(255,255,255,0.08)",
-                              borderBottom:
-                                "1px solid rgba(255,255,255,0.08)",
+                              borderBottom: "1px solid rgba(255,255,255,0.08)",
                               boxShadow: `0 0 12px ${color}35`,
                               backdropFilter: "blur(14px)",
                             }}
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <p className="truncate font-semibold">
-                                {taskTitle(task)}
-                              </p>
+                              <div className="min-w-0">
+                                <p
+                                  className={`truncate font-semibold ${
+                                    done ? "line-through text-white/45" : ""
+                                  }`}
+                                >
+                                  {isRoutine(task) && (
+                                    <Repeat size={12} className="mr-1 inline" />
+                                  )}
+                                  {taskTitle(task)}
+                                </p>
+                              </div>
 
-                              {isDone(task) && <CheckCircle2 size={14} />}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleTaskDone(task, key);
+                                }}
+                                className="shrink-0 text-white/70 hover:text-white"
+                              >
+                                {done ? (
+                                  <CheckCircle2 size={15} />
+                                ) : (
+                                  <Circle size={15} />
+                                )}
+                              </button>
                             </div>
 
                             <p className="mt-1 truncate text-[11px] text-white/75">
@@ -591,11 +918,9 @@ export default function CalendarPage() {
               <div className="grid grid-cols-7">
                 {monthGrid.map((date) => {
                   const key = dateKey(date);
-                  const dayTasks = tasks
-                    .filter((task) => getTaskDate(task) === key)
-                    .sort((a, b) =>
-                      getTaskHour(a).localeCompare(getTaskHour(b))
-                    );
+                  const dayTasks = getVisibleTasksForDate(tasks, key, routineLogs).sort(
+                    (a, b) => getTaskHour(a).localeCompare(getTaskHour(b))
+                  );
 
                   return (
                     <div
@@ -609,9 +934,7 @@ export default function CalendarPage() {
                       }`}
                     >
                       <div className="mb-3 flex items-center justify-between">
-                        <p className="text-sm font-semibold">
-                          {date.getDate()}
-                        </p>
+                        <p className="text-sm font-semibold">{date.getDate()}</p>
 
                         {dayTasks.length > 0 && (
                           <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] text-white/50">
@@ -623,17 +946,20 @@ export default function CalendarPage() {
                       <div className="space-y-2">
                         {dayTasks.slice(0, 3).map((task) => {
                           const color = getTaskColor(task, projects);
+                          const done = isRoutine(task)
+                            ? task.routine_done_today
+                            : isDone(task);
 
                           return (
                             <div
-                              key={task.id}
+                              key={`${task.id}-${key}`}
                               draggable
                               onClick={() => openTaskFromCalendar(task)}
                               onDragStart={(e) => {
                                 e.dataTransfer.setData("taskId", task.id);
                               }}
                               className={`cursor-pointer truncate rounded-lg border border-white/10 px-2 py-1 text-xs text-white transition hover:scale-[1.01] hover:bg-white/[0.08] ${
-                                isDone(task) ? "opacity-55" : ""
+                                done ? "opacity-55" : ""
                               }`}
                               style={{
                                 background: "rgba(15, 23, 42, 0.72)",
@@ -643,8 +969,17 @@ export default function CalendarPage() {
                                 backdropFilter: "blur(10px)",
                               }}
                             >
-                              {getTaskHour(task) || "--:--"} ·{" "}
-                              {taskTitle(task)}
+                              <span
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleTaskDone(task, key);
+                                }}
+                                className="mr-1 inline-block text-white/60"
+                              >
+                                {done ? "✓" : "○"}
+                              </span>
+                              {isRoutine(task) ? "↻ " : ""}
+                              {getTaskHour(task) || "--:--"} · {taskTitle(task)}
                             </div>
                           );
                         })}
@@ -666,6 +1001,8 @@ export default function CalendarPage() {
             <section className="grid grid-cols-3 gap-5">
               {monthNames.map((month, monthIndex) => {
                 const monthTasks = tasks.filter((task) => {
+                  if (isRoutine(task)) return true;
+
                   const value = getTaskDate(task);
                   if (!value) return false;
 
@@ -698,7 +1035,7 @@ export default function CalendarPage() {
                         <h2 className="text-xl font-semibold">{month}</h2>
 
                         <p className="mt-1 text-xs text-white/35">
-                          {monthTasks.length} tache(s) · {progress}% termine
+                          {monthTasks.length} tâche(s) · {progress}% terminé
                         </p>
                       </div>
 
@@ -738,7 +1075,7 @@ export default function CalendarPage() {
                     <div className="mt-5 space-y-2">
                       {monthTasks.length === 0 && (
                         <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-white/35">
-                          Aucun evenement
+                          Aucun événement
                         </div>
                       )}
 
@@ -747,7 +1084,7 @@ export default function CalendarPage() {
 
                         return (
                           <div
-                            key={task.id}
+                            key={`${task.id}-${monthIndex}`}
                             onClick={() => openTaskFromCalendar(task)}
                             className="cursor-pointer rounded-xl border border-white/10 bg-white/[0.035] px-3 py-2 text-xs transition hover:bg-white/[0.08]"
                             style={{
@@ -766,6 +1103,7 @@ export default function CalendarPage() {
                               />
 
                               <span className="truncate text-white/80">
+                                {isRoutine(task) ? "↻ " : ""}
                                 {taskTitle(task)}
                               </span>
                             </div>
@@ -786,6 +1124,197 @@ export default function CalendarPage() {
           )}
         </div>
       </section>
+
+      {selectedTask && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-[680px] rounded-[34px] border border-white/10 bg-[#060b14]/95 p-6 shadow-2xl shadow-black">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.32em] text-white/35">
+                  Modifier depuis le calendrier
+                </p>
+
+                <h2 className="mt-3 text-2xl font-semibold text-white">
+                  {taskTitle(selectedTask)}
+                </h2>
+
+                <p className="mt-2 text-sm text-white/40">
+                  Modifie la date, les heures, le statut ou les détails.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={closeTaskModal}
+                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-black/25 text-white/45 hover:bg-white/[0.07] hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <label className="block">
+                <p className="mb-2 text-sm text-white/45">Nom</p>
+
+                <input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="field"
+                />
+              </label>
+
+              <label className="block">
+                <p className="mb-2 text-sm text-white/45">Description</p>
+
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={4}
+                  className="modal-field resize-none"
+                />
+              </label>
+
+              <div className="grid grid-cols-3 gap-4">
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Date</p>
+
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="field [color-scheme:dark]"
+                  />
+                </label>
+
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Début</p>
+
+                  <input
+                    type="time"
+                    value={editStart}
+                    onChange={(e) => setEditStart(e.target.value)}
+                    className="field [color-scheme:dark]"
+                  />
+                </label>
+
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Fin</p>
+
+                  <input
+                    type="time"
+                    value={editEnd}
+                    onChange={(e) => setEditEnd(e.target.value)}
+                    className="field [color-scheme:dark]"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Priorité</p>
+
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value)}
+                    className="field"
+                  >
+                    {priorityOptions.map((priority) => (
+                      <option key={priority} value={priority}>
+                        {priority}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Statut</p>
+
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="field"
+                  >
+                    <option value="todo">À faire</option>
+                    <option value="progress">En cours</option>
+                    <option value="upcoming">À venir</option>
+                    <option value="done">Terminé</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-7 flex justify-between gap-3">
+              <button
+                type="button"
+                onClick={deleteSelectedTask}
+                className="flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-300 hover:bg-red-500/20"
+              >
+                <Trash2 size={16} />
+                Supprimer
+              </button>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    toggleTaskDone(selectedTask, selectedTask.calendar_date || editDate)
+                  }
+                  className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.035] px-5 py-3 text-sm font-semibold text-white/60 hover:bg-white/[0.07] hover:text-white"
+                >
+                  <CheckCircle2 size={16} />
+                  Valider
+                </button>
+
+                <button
+                  type="button"
+                  onClick={saveTaskFromModal}
+                  disabled={saving}
+                  className="flex items-center gap-2 rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-black hover:bg-white/90 disabled:opacity-50"
+                >
+                  <Save size={16} />
+                  {saving ? "Enregistrement..." : "Enregistrer"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx global>{`
+        .field {
+          height: 52px;
+          width: 100%;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.25);
+          padding: 0 16px;
+          font-size: 14px;
+          color: white;
+          outline: none;
+        }
+
+        .modal-field {
+          width: 100%;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.25);
+          padding: 16px;
+          font-size: 14px;
+          color: white;
+          outline: none;
+        }
+
+        .field:focus,
+        .modal-field:focus {
+          border-color: rgba(255, 255, 255, 0.25);
+          background: rgba(255, 255, 255, 0.06);
+        }
+
+        .field option {
+          background: #030712;
+          color: white;
+        }
+      `}</style>
     </main>
   );
 }

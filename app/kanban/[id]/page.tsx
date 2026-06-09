@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
@@ -35,7 +35,7 @@ const columns = [
   {
     id: "today",
     title: "En cours",
-    subtitle: "Tâches prévues aujourd’hui",
+    subtitle: "Tâches prévues aujourd'hui",
     icon: Clock3,
   },
   {
@@ -236,7 +236,7 @@ export default function ProjectKanbanPage() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
-      window.location.href = "/login";
+      return null;
       return null;
     }
 
@@ -439,7 +439,7 @@ export default function ProjectKanbanPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#030712] text-white flex">
+      <main className="min-h-scréen bg-[#030712] text-white flex">
         <Sidebar />
         <section className="flex-1 flex items-center justify-center">
           <div className="rounded-3xl border border-white/10 bg-white/[0.04] px-8 py-5 text-white/45">
@@ -451,7 +451,7 @@ export default function ProjectKanbanPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex">
+    <main className="min-h-scréen bg-[#030712] text-white flex">
       <Sidebar />
 
       <section className="flex-1 p-8">
@@ -715,3 +715,4 @@ export default function ProjectKanbanPage() {
     </main>
   );
 }
+

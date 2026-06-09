@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import { createClient } from "@supabase/supabase-js";
@@ -27,26 +27,26 @@ const supabase = createClient(
 const columns = [
   {
     id: "todo",
-    title: "A faire",
-    subtitle: "Taches pas encore lancees",
+    title: "À faire",
+    subtitle: "Tâches pas encore lancées",
     icon: ClipboardList,
   },
   {
     id: "progress",
     title: "En cours",
-    subtitle: "Taches en progression",
+    subtitle: "Tâches en progression",
     icon: Clock3,
   },
   {
     id: "upcoming",
-    title: "A venir",
-    subtitle: "Prevu demain ou plus tard",
+    title: "À venir",
+    subtitle: "Prévu demain ou plus tard",
     icon: CalendarClock,
   },
   {
     id: "done",
-    title: "Termine",
-    subtitle: "Taches finalisees",
+    title: "Terminé",
+    subtitle: "Tâches finalisées",
     icon: CheckCircle2,
   },
 ];
@@ -152,7 +152,7 @@ function getTaskProgress(task: any, subtasks: any[], schedules: any[]) {
       total: taskSubtasks.length,
       done,
       percent: Math.round((done / taskSubtasks.length) * 100),
-      label: "sous-tache(s)",
+      label: "sous-tâche(s)",
     };
   }
 
@@ -160,7 +160,7 @@ function getTaskProgress(task: any, subtasks: any[], schedules: any[]) {
     total: 1,
     done: isDone(task) ? 1 : 0,
     percent: isDone(task) ? 100 : 0,
-    label: "tache",
+    label: "tâche",
   };
 }
 
@@ -172,7 +172,7 @@ function getProjectProgress(tasks: any[], subtasks: any[], schedules: any[]) {
       total: schedules.length,
       done,
       percent: Math.round((done / schedules.length) * 100),
-      label: "case(s) validee(s)",
+      label: "case(s) validée(s)",
     };
   }
 
@@ -183,7 +183,7 @@ function getProjectProgress(tasks: any[], subtasks: any[], schedules: any[]) {
       total: subtasks.length,
       done,
       percent: Math.round((done / subtasks.length) * 100),
-      label: "sous-tache(s) validee(s)",
+      label: "sous-tâche(s) validée(s)",
     };
   }
 
@@ -193,7 +193,7 @@ function getProjectProgress(tasks: any[], subtasks: any[], schedules: any[]) {
     total: tasks.length,
     done,
     percent: tasks.length > 0 ? Math.round((done / tasks.length) * 100) : 0,
-    label: "tache(s) terminee(s)",
+    label: "tâche(s) terminée(s)",
   };
 }
 
@@ -395,7 +395,7 @@ export default function ProjectKanbanPage() {
   }
 
   async function deleteTask(taskId: string) {
-    const ok = confirm("Supprimer cette tache et ses sous-taches ?");
+    const ok = confirm("Supprimer cette tâche et ses sous-tâches ?");
     if (!ok) return;
 
     await supabase.from("subtask_schedule").delete().eq("task_id", taskId);
@@ -426,7 +426,7 @@ export default function ProjectKanbanPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen bg-[#030712] text-white">
+      <main className="flex min-h-scréen bg-[#030712] text-white">
         <Sidebar />
 
         <section className="flex flex-1 items-center justify-center">
@@ -440,7 +440,7 @@ export default function ProjectKanbanPage() {
 
   if (!project) {
     return (
-      <main className="flex min-h-screen bg-[#030712] text-white">
+      <main className="flex min-h-scréen bg-[#030712] text-white">
         <Sidebar />
 
         <section className="flex flex-1 items-center justify-center p-8">
@@ -465,7 +465,7 @@ export default function ProjectKanbanPage() {
   }
 
   return (
-    <main className="flex min-h-screen bg-[#030712] text-white">
+    <main className="flex min-h-scréen bg-[#030712] text-white">
       <Sidebar />
 
       <section className="flex-1 p-8">
@@ -490,12 +490,12 @@ export default function ProjectKanbanPage() {
               </h1>
 
               <p className="mt-3 max-w-2xl text-base text-white/45">
-                {project.description || "Organise les taches de ce projet."}
+                {project.description || "Organise les tâches de ce projet."}
               </p>
             </div>
 
             <div className="w-[270px] rounded-[28px] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <p className="text-sm text-white/45">Avancement reel</p>
+              <p className="text-sm text-white/45">Avancement réel</p>
 
               <p className="mt-3 text-4xl font-semibold">
                 {projectProgress.percent}%
@@ -527,7 +527,7 @@ export default function ProjectKanbanPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter") addTask();
                 }}
-                placeholder="Nouvelle tache du projet..."
+                placeholder="Nouvelle tâche du projet..."
                 className="h-[52px] flex-1 rounded-2xl border border-white/10 bg-white/[0.045] px-4 text-sm text-white outline-none placeholder:text-white/35"
               />
 
@@ -612,7 +612,7 @@ export default function ProjectKanbanPage() {
                     {columnTasks.length === 0 && (
                       <div className="flex min-h-[250px] flex-col items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-black/15 p-6 text-center">
                         <Icon size={42} className="mb-4 text-white/20" />
-                        <p className="text-sm text-white/40">Aucune tache</p>
+                        <p className="text-sm text-white/40">Aucune tâche</p>
                       </div>
                     )}
 
@@ -729,7 +729,7 @@ export default function ProjectKanbanPage() {
                             onClick={(e) => e.stopPropagation()}
                             className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.08] px-3 py-2 text-xs font-semibold text-white/80 transition hover:bg-white/[0.14] hover:text-white"
                           >
-                            Gerer les sous-taches
+                            Gérer les sous-tâches
                             <ArrowUpRight size={13} />
                           </a>
 
@@ -739,7 +739,7 @@ export default function ProjectKanbanPage() {
                               onClick={() => updateTaskColumn(task.id, "todo")}
                               className="rounded-xl bg-white/10 px-3 py-2 text-xs text-white/55 hover:bg-white/20 hover:text-white"
                             >
-                              A faire
+                              À faire
                             </button>
 
                             <button
@@ -759,7 +759,7 @@ export default function ProjectKanbanPage() {
                               }
                               className="rounded-xl bg-white/10 px-3 py-2 text-xs text-white/55 hover:bg-blue-500/20 hover:text-blue-300"
                             >
-                              A venir
+                              À venir
                             </button>
 
                             <button
@@ -767,7 +767,7 @@ export default function ProjectKanbanPage() {
                               onClick={() => updateTaskColumn(task.id, "done")}
                               className="rounded-xl bg-white/10 px-3 py-2 text-xs text-white/55 hover:bg-violet-500/20 hover:text-violet-300"
                             >
-                              Termine
+                              Terminé
                             </button>
                           </div>
                         </article>
@@ -783,3 +783,4 @@ export default function ProjectKanbanPage() {
     </main>
   );
 }
+

@@ -1,6 +1,7 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import {
   Lock,
@@ -24,6 +25,8 @@ const supabase = createClient(
 type Mode = "login" | "register" | "forgot";
 
 export default function LoginPage() {
+  const router = useRouter();
+
   const [mode, setMode] = useState<Mode>("login");
 
   const [email, setEmail] = useState("");
@@ -40,8 +43,36 @@ export default function LoginPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function checkSession() {
+      const { data } = await supabase.auth.getSession();
+
+      if (data.session) {
+        router.replace("/dashboard");
+        return;
+      }
+
+      setCheckingSession(false);
+    }
+
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && event === "SIGNED_IN") {
+        router.replace("/dashboard");
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [router]);
 
   function resetMessages() {
     setMessage("");
@@ -54,7 +85,7 @@ export default function LoginPage() {
   }
 
   function goToDashboard() {
-    window.location.href = `${window.location.origin}/dashboard`;
+    router.replace("/dashboard");
   }
 
   async function loginWithGoogle() {
@@ -80,19 +111,33 @@ export default function LoginPage() {
     resetMessages();
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
       password,
     });
 
-    setLoading(false);
-
     if (error) {
+      setLoading(false);
       setError("Email ou mot de passe incorrect.");
       return;
     }
 
-    goToDashboard();
+    if (data.session) {
+      setLoading(false);
+      goToDashboard();
+      return;
+    }
+
+    const { data: sessionData } = await supabase.auth.getSession();
+
+    if (sessionData.session) {
+      setLoading(false);
+      goToDashboard();
+      return;
+    }
+
+    setLoading(false);
+    setError("Connexion réussie, mais session non récupérée. Réessaie.");
   }
 
   async function handleRegister(e: React.FormEvent) {
@@ -125,7 +170,7 @@ export default function LoginPage() {
     }
 
     if (!email.trim()) {
-      setError("L’adresse mail est obligatoire.");
+      setError("L'adresse mail est obligatoire.");
       return;
     }
 
@@ -143,8 +188,8 @@ export default function LoginPage() {
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`;
 
-    const { error } = await supabase.auth.signUp({
-      email,
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
       password,
       options: {
         data: {
@@ -166,6 +211,11 @@ export default function LoginPage() {
       return;
     }
 
+    if (data.session) {
+      goToDashboard();
+      return;
+    }
+
     setMessage(
       "Compte créé. Vérifie ton email si Supabase demande une confirmation."
     );
@@ -182,7 +232,7 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/login`,
     });
 
@@ -210,8 +260,18 @@ export default function LoginPage() {
       ? "Crée ton profil complet pour personnaliser ton espace."
       : "Entre ton email pour recevoir un lien de réinitialisation.";
 
+  if (checkingSession) {
+    return (
+      <main className="flex min-h-scréen items-center justify-center bg-[#030712] px-6 py-10 text-white">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.035] px-8 py-5 text-sm text-white/45 shadow-2xl shadow-black/30 backdrop-blur-2xl">
+          Vérification de la session...
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#030712] px-6 py-10 text-white">
+    <main className="flex min-h-scréen items-center justify-center bg-[#030712] px-6 py-10 text-white">
       <div className="grid w-full max-w-[1120px] grid-cols-1 items-center gap-8 lg:grid-cols-[1fr_500px]">
         <section className="hidden lg:block">
           <p className="text-[11px] uppercase tracking-[0.45em] text-white/30">
@@ -471,7 +531,7 @@ export default function LoginPage() {
 
             {mode === "register" && (
               <div className="text-white/35">
-                Déjà un compte ?{" "}
+                DéjÃ  un compte ?{" "}
                 <button
                   type="button"
                   onClick={() => changeMode("login")}
@@ -488,7 +548,7 @@ export default function LoginPage() {
                 onClick={() => changeMode("login")}
                 className="text-white/40 transition hover:text-white"
               >
-                Retour à la connexion
+                Retour Ã  la connexion
               </button>
             )}
           </div>
@@ -615,3 +675,4 @@ function GoogleIcon() {
     </svg>
   );
 }
+

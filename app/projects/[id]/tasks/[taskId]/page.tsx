@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import { createClient } from "@supabase/supabase-js";
@@ -474,7 +474,7 @@ export default function TaskSubtasksPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen bg-[#030712] text-white">
+      <main className="flex min-h-scréen bg-[#030712] text-white">
         <Sidebar />
 
         <section className="flex flex-1 items-center justify-center">
@@ -488,7 +488,7 @@ export default function TaskSubtasksPage() {
 
   if (notFound || !task) {
     return (
-      <main className="flex min-h-screen bg-[#030712] text-white">
+      <main className="flex min-h-scréen bg-[#030712] text-white">
         <Sidebar />
 
         <section className="flex flex-1 items-center justify-center p-8">
@@ -496,7 +496,7 @@ export default function TaskSubtasksPage() {
             <h1 className="text-2xl font-semibold">Tâche introuvable</h1>
 
             <p className="mt-3 text-sm text-white/45">
-              Cette tâche n’existe plus ou son identifiant est invalide.
+              Cette tâche n'existe plus ou son identifiant est invalide.
             </p>
 
             <button
@@ -512,7 +512,7 @@ export default function TaskSubtasksPage() {
   }
 
   return (
-    <main className="flex min-h-screen bg-[#030712] text-white">
+    <main className="flex min-h-scréen bg-[#030712] text-white">
       <Sidebar />
 
       <section className="flex-1 p-8">
@@ -827,3 +827,4 @@ export default function TaskSubtasksPage() {
     </main>
   );
 }
+

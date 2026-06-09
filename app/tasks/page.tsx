@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import { useEffect, useMemo, useState } from "react";
@@ -88,7 +88,7 @@ export default function TasksPage() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
-      window.location.href = "/login";
+      return null;
       return null;
     }
 
@@ -310,7 +310,7 @@ export default function TasksPage() {
   ]);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex">
+    <main className="min-h-scréen bg-[#030712] text-white flex">
       <Sidebar />
 
       <section className="flex-1 p-8">
@@ -485,7 +485,7 @@ export default function TasksPage() {
                 </h2>
 
                 <p className="text-sm text-white/40">
-                  Tâche simple, routine ou tâche liée à un projet.
+                  Tâche simple, routine ou tâche liée Ã  un projet.
                 </p>
               </div>
 
@@ -681,3 +681,4 @@ function PriorityBadge({ priority }: { priority: string }) {
     </span>
   );
 }
+

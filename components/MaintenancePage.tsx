@@ -1,4 +1,4 @@
-import { Construction, Wrench } from "lucide-react";
+﻿import { Construction, Wrench } from "lucide-react";
 import Link from "next/link";
 
 export default function MaintenancePage({
@@ -7,7 +7,7 @@ export default function MaintenancePage({
   title: string;
 }) {
   return (
-    <main className="min-h-screen bg-[#030712] flex items-center justify-center p-6 text-white">
+    <main className="min-h-scréen bg-[#030712] flex items-center justify-center p-6 text-white">
       <div className="max-w-lg text-center">
         <div className="flex justify-center mb-6">
           <Construction size={80} />
@@ -27,7 +27,7 @@ export default function MaintenancePage({
         </div>
 
         <p className="text-white/30 text-sm">
-          Erreur 404 — Module temporairement indisponible
+          Erreur 404 "” Module temporairement indisponible
         </p>
 
         <Link
@@ -40,3 +40,4 @@ export default function MaintenancePage({
     </main>
   );
 }
+

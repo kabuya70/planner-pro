@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import Sidebar from "@/components/Sidebar";
@@ -166,7 +166,7 @@ export default function DashboardPage() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
-      window.location.href = "/login";
+      return null;
       return null;
     }
 
@@ -344,11 +344,11 @@ export default function DashboardPage() {
       ).length;
 
       return {
-        day: label,
-        prévues: planned,
-        accomplies: done,
-        routines: routinesDone,
-      };
+  day: label,
+  prévues: planned,
+  accomplies: done,
+  routines: routinesDone,
+};
     });
   }, [normalTasks, routineTasks, routineLogs]);
 
@@ -356,7 +356,7 @@ export default function DashboardPage() {
   const recentProjects = projects.slice(0, 5);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex overflow-hidden">
+    <main className="min-h-scréen bg-[#030712] text-white flex overflow-hidden">
       <Sidebar />
 
       <section className="flex-1 overflow-y-auto px-8 py-8">
@@ -408,9 +408,9 @@ export default function DashboardPage() {
 
                 <GlassStat
                   icon={<AlertTriangle size={18} />}
-                  label="Urgentes aujourd’hui"
+                  label="Urgentes aujourd'hui"
                   value={urgent}
-                  sub="à traiter rapidement"
+                  sub="Ã  traiter rapidement"
                 />
 
                 <GlassStat
@@ -512,7 +512,7 @@ export default function DashboardPage() {
 
                 <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/20 backdrop-blur-2xl">
                   <div className="mb-6">
-                    <h2 className="text-2xl font-semibold">Aujourd’hui</h2>
+                    <h2 className="text-2xl font-semibold">Aujourd'hui</h2>
 
                     <p className="mt-1 text-sm text-white/40">
                       Clique pour valider
@@ -522,7 +522,7 @@ export default function DashboardPage() {
                   <div className="space-y-3">
                     {recentTodayTasks.length === 0 && (
                       <div className="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-white/35">
-                        Rien de prévu aujourd’hui.
+                        Rien de prévu aujourd'hui.
                       </div>
                     )}
 
@@ -696,7 +696,7 @@ function ProgressCard({
             {completed}/{total}
           </p>
 
-          <p className="mt-2 text-sm text-white/35">validées aujourd’hui</p>
+          <p className="mt-2 text-sm text-white/35">validées aujourd'hui</p>
         </div>
       </div>
     </div>
@@ -737,3 +737,4 @@ function LegendItem({ color, label }: { color: string; label: string }) {
     </div>
   );
 }
+

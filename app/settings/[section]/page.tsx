@@ -227,11 +227,11 @@ export default function SettingsSectionPage() {
 
   async function logout() {
     await supabase.auth.signOut();
-    window.location.href = "/login";
+    return null;
   }
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex">
+    <main className="min-h-scréen bg-[#030712] text-white flex">
       <Sidebar />
 
       <section className="flex-1 px-8 py-10">
@@ -569,3 +569,4 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
     </div>
   );
 }
+

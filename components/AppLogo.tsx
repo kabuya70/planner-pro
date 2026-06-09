@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 type AppLogoProps = {
   size?: number;
@@ -77,3 +77,4 @@ export default function AppLogo({
     </div>
   );
 }
+

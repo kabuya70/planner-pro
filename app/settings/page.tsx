@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
@@ -27,7 +27,7 @@ const settingsItems = [
   },
   {
     title: "Apparence",
-    description: "Choisir le thème visuel de l’application.",
+    description: "Choisir le thème visuel de l'application.",
     href: "/settings/apparence",
     icon: Palette,
   },
@@ -94,7 +94,7 @@ export default function SettingsPage() {
   }, [userName]);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex">
+    <main className="min-h-scréen bg-[#030712] text-white flex">
       <Sidebar />
 
       <section className="flex-1 px-8 py-10">
@@ -168,10 +168,11 @@ export default function SettingsPage() {
           </section>
 
           <p className="mt-6 text-center text-xs leading-5 text-white/30">
-            Les préférences sont sauvegardées progressivement. Les thèmes et notifications sont stockés localement pour l’instant.
+            Les préférences sont sauvegardées progressivement. Les thèmes et notifications sont stockés localement pour l'instant.
           </p>
         </div>
       </section>
     </main>
   );
 }
+

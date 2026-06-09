@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Sidebar from "@/components/Sidebar";
 import Link from "next/link";
@@ -14,6 +14,10 @@ import {
   Target,
   ArrowUpRight,
   X,
+  Star,
+  Flag,
+  CalendarDays,
+  CircleDot,
 } from "lucide-react";
 
 const supabase = createClient(
@@ -30,8 +34,60 @@ const projectColors = [
   "#eab308",
 ];
 
+const projectPriorities = ["Basse", "Normale", "Importante", "Urgente"];
+const projectStatuses = ["Actif", "En pause", "Terminé"];
+const projectCatégories = [
+  "Études",
+  "Travail",
+  "Personnel",
+  "Administratif",
+  "Sport",
+  "Business",
+  "Autre",
+];
+
 function isDone(task: any) {
   return task?.done === true || task?.status === "done";
+}
+
+function formatDate(value: string | null | undefined) {
+  if (!value) return "Non définie";
+
+  const date = String(value).slice(0, 10);
+  const parts = date.split("-");
+
+  if (parts.length !== 3) return date;
+
+  const [year, month, day] = parts;
+  return `${day}/${month}/${year}`;
+}
+
+function priorityStyle(priority: string) {
+  if (priority === "Urgente") {
+    return "border-red-500/25 bg-red-500/10 text-red-300";
+  }
+
+  if (priority === "Importante") {
+    return "border-orange-500/25 bg-orange-500/10 text-orange-300";
+  }
+
+  if (priority === "Basse") {
+    return "border-slate-500/25 bg-slate-500/10 text-slate-300";
+  }
+
+  return "border-white/10 bg-white/10 text-white/60";
+}
+
+function statusStyle(status: string) {
+  if (status === "Terminé") {
+    return "border-green-500/25 bg-green-500/10 text-green-300";
+  }
+
+  if (status === "En pause") {
+    return "border-yellow-500/25 bg-yellow-500/10 text-yellow-300";
+  }
+
+  return "border-sky-500/25 bg-sky-500/10 text-sky-300";
 }
 
 function getProjectRealProgress(
@@ -70,8 +126,8 @@ function getProjectRealProgress(
       total: projectSubtasks.length,
       done,
       progress: Math.round((done / projectSubtasks.length) * 100),
-      source: "sous-taches",
-      label: "sous-tache(s)",
+      source: "sous-tâches",
+      label: "sous-tâche(s)",
     };
   }
 
@@ -82,8 +138,8 @@ function getProjectRealProgress(
       total: projectTasks.length,
       done,
       progress: Math.round((done / projectTasks.length) * 100),
-      source: "taches",
-      label: "tache(s)",
+      source: "tâches",
+      label: "tâche(s)",
     };
   }
 
@@ -92,7 +148,7 @@ function getProjectRealProgress(
     done: 0,
     progress: 0,
     source: "vide",
-    label: "element(s)",
+    label: "élément(s)",
   };
 }
 
@@ -109,23 +165,36 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState("");
 
   const [showModal, setShowModal] = useState(false);
+
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
+  const [projectObjective, setProjectObjective] = useState("");
+  const [projectCategory, setProjectCategory] = useState("Études");
+  const [projectPriority, setProjectPriority] = useState("Normale");
+  const [projectStatus, setProjectStatus] = useState("Actif");
+  const [projectStartDate, setProjectStartDate] = useState("");
+  const [projectEndDate, setProjectEndDate] = useState("");
   const [projectColor, setProjectColor] = useState(projectColors[0]);
+  const [projectStarred, setProjectStarred] = useState(false);
 
   useEffect(() => {
     loadData();
   }, []);
 
   async function getCurrentUser() {
-    const { data, error } = await supabase.auth.getUser();
+    const { data: sessionData } = await supabase.auth.getSession();
 
-    if (error || !data.user) {
-      window.location.href = "/login";
-      return null;
+    if (sessionData.session?.user) {
+      return sessionData.session.user;
     }
 
-    return data.user;
+    const { data: userData } = await supabase.auth.getUser();
+
+    if (userData.user) {
+      return userData.user;
+    }
+
+    return null;
   }
 
   async function loadData() {
@@ -179,29 +248,17 @@ export default function ProjectsPage() {
       const taskIds = tasksData.map((task) => task.id);
 
       if (taskIds.length > 0) {
-        const { data: subtaskResult, error: subtasksError } = await supabase
+        const { data: subtaskResult } = await supabase
           .from("subtasks")
           .select("*")
           .in("task_id", taskIds);
 
-        if (subtasksError) {
-          alert(subtasksError.message);
-          setLoading(false);
-          return;
-        }
-
         subtasksData = subtaskResult || [];
 
-        const { data: scheduleResult, error: schedulesError } = await supabase
+        const { data: scheduleResult } = await supabase
           .from("subtask_schedule")
           .select("*")
           .in("task_id", taskIds);
-
-        if (schedulesError) {
-          alert(schedulesError.message);
-          setLoading(false);
-          return;
-        }
 
         schedulesData = scheduleResult || [];
       }
@@ -214,9 +271,24 @@ export default function ProjectsPage() {
     setLoading(false);
   }
 
+  function resetProjectForm() {
+    setProjectName("");
+    setProjectDescription("");
+    setProjectObjective("");
+    setProjectCategory("Études");
+    setProjectPriority("Normale");
+    setProjectStatus("Actif");
+    setProjectStartDate("");
+    setProjectEndDate("");
+    setProjectColor(projectColors[0]);
+    setProjectStarred(false);
+  }
+
   async function createProject() {
-    if (!user) {
-      alert("Utilisateur non connecté.");
+    const currentUser = user || (await getCurrentUser());
+
+    if (!currentUser) {
+      alert("Session expirée. Reconnecte-toi.");
       return;
     }
 
@@ -225,13 +297,29 @@ export default function ProjectsPage() {
       return;
     }
 
+    if (
+      projectStartDate &&
+      projectEndDate &&
+      projectEndDate < projectStartDate
+    ) {
+      alert("La date de fin ne peut pas être avant la date de début.");
+      return;
+    }
+
     setCreating(true);
 
     const payload: any = {
-      user_id: user.id,
+      user_id: currentUser.id,
       name: projectName.trim(),
       description: projectDescription.trim() || null,
+      objective: projectObjective.trim() || null,
+      category: projectCategory,
+      priority: projectPriority,
+      status: projectStatus,
+      start_date: projectStartDate || null,
+      end_date: projectEndDate || null,
       color: projectColor,
+      is_starred: projectStarred,
     };
 
     const { error } = await supabase.from("projects").insert(payload);
@@ -242,9 +330,7 @@ export default function ProjectsPage() {
       return;
     }
 
-    setProjectName("");
-    setProjectDescription("");
-    setProjectColor(projectColors[0]);
+    resetProjectForm();
     setShowModal(false);
 
     await loadData();
@@ -282,15 +368,28 @@ export default function ProjectsPage() {
   }
 
   const filteredProjects = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
 
-    if (!q) return projects;
+    const sortedProjects = [...projects].sort((a, b) => {
+      if (a.is_starred && !b.is_starred) return -1;
+      if (!a.is_starred && b.is_starred) return 1;
+      return 0;
+    });
 
-    return projects.filter((project) => {
+    if (!query) return sortedProjects;
+
+    return sortedProjects.filter((project) => {
       const name = String(project.name || "").toLowerCase();
       const description = String(project.description || "").toLowerCase();
+      const objective = String(project.objective || "").toLowerCase();
+      const category = String(project.category || "").toLowerCase();
 
-      return name.includes(q) || description.includes(q);
+      return (
+        name.includes(query) ||
+        description.includes(query) ||
+        objective.includes(query) ||
+        category.includes(query)
+      );
     });
   }, [projects, search]);
 
@@ -322,7 +421,7 @@ export default function ProjectsPage() {
   }, [projects, tasks, subtasks, schedules]);
 
   return (
-    <main className="min-h-screen bg-[#030712] text-white flex">
+    <main className="min-h-scréen bg-[#030712] text-white flex">
       <Sidebar />
 
       <section className="flex-1 p-8">
@@ -339,7 +438,7 @@ export default function ProjectsPage() {
 
               <p className="mt-3 text-white/45">
                 Suis tes projets, leurs tâches, leurs échéances et leur
-                avancement.
+                avancement réel.
               </p>
             </div>
 
@@ -418,6 +517,8 @@ export default function ProjectsPage() {
                 );
 
                 const color = project.color || "#64748b";
+                const priority = project.priority || "Normale";
+                const status = project.status || "Actif";
 
                 return (
                   <article
@@ -437,9 +538,18 @@ export default function ProjectsPage() {
                           </div>
 
                           <div className="min-w-0">
-                            <h2 className="truncate text-lg font-semibold text-white">
-                              {project.name || "Projet sans nom"}
-                            </h2>
+                            <div className="flex items-center gap-2">
+                              <h2 className="truncate text-lg font-semibold text-white">
+                                {project.name || "Projet sans nom"}
+                              </h2>
+
+                              {project.is_starred && (
+                                <Star
+                                  size={16}
+                                  className="shrink-0 fill-yellow-400 text-yellow-400"
+                                />
+                              )}
+                            </div>
 
                             <p className="mt-1 text-xs text-white/35">
                               Basé sur : {progress.label}
@@ -460,6 +570,56 @@ export default function ProjectsPage() {
                         <Trash2 size={16} />
                       </button>
                     </div>
+
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      <span
+                        className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs ${priorityStyle(
+                          priority
+                        )}`}
+                      >
+                        <Flag size={12} />
+                        {priority}
+                      </span>
+
+                      <span
+                        className={`flex items-center gap-1 rounded-full border px-3 py-1 text-xs ${statusStyle(
+                          status
+                        )}`}
+                      >
+                        <CircleDot size={12} />
+                        {status}
+                      </span>
+
+                      {project.category && (
+                        <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/55">
+                          {project.category}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mb-4 grid grid-cols-2 gap-3 rounded-2xl border border-white/10 bg-black/20 p-3 text-xs text-white/45">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays size={14} />
+                        Début : {formatDate(project.start_date)}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <CalendarDays size={14} />
+                        Fin : {formatDate(project.end_date)}
+                      </div>
+                    </div>
+
+                    {project.objective && (
+                      <div className="mb-5 rounded-2xl border border-white/10 bg-black/20 p-3">
+                        <p className="text-[11px] uppercase tracking-[0.2em] text-white/30">
+                          Objectif
+                        </p>
+
+                        <p className="mt-2 line-clamp-2 text-sm text-white/55">
+                          {project.objective}
+                        </p>
+                      </div>
+                    )}
 
                     <div className="mb-5 grid grid-cols-3 gap-3">
                       <MiniStat
@@ -516,7 +676,7 @@ export default function ProjectsPage() {
 
       {showModal && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 px-6 backdrop-blur-sm">
-          <div className="w-full max-w-[560px] rounded-[34px] border border-white/10 bg-[#060b14]/95 p-6 shadow-2xl shadow-black">
+          <div className="max-h-[92vh] w-full max-w-[760px] overflow-y-auto rounded-[34px] border border-white/10 bg-[#060b14]/95 p-6 shadow-2xl shadow-black">
             <div className="mb-6 flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] uppercase tracking-[0.32em] text-white/35">
@@ -528,7 +688,7 @@ export default function ProjectsPage() {
                 </h2>
 
                 <p className="mt-2 text-sm text-white/40">
-                  Donne un nom, une description et une couleur à ton projet.
+                  Définis les informations principales de ton projet.
                 </p>
               </div>
 
@@ -548,8 +708,8 @@ export default function ProjectsPage() {
                 <input
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="Ex : Créer une association"
-                  className="w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3.5 text-sm text-white outline-none placeholder:text-white/30"
+                  placeholder="Ex : Révision cours"
+                  className="field"
                 />
               </label>
 
@@ -559,14 +719,125 @@ export default function ProjectsPage() {
                 <textarea
                   value={projectDescription}
                   onChange={(e) => setProjectDescription(e.target.value)}
-                  placeholder="Décris rapidement l’objectif du projet..."
+                  placeholder="Décris rapidement l’objectif général du projet..."
                   rows={4}
-                  className="w-full resize-none rounded-2xl border border-white/10 bg-black/25 px-4 py-3.5 text-sm text-white outline-none placeholder:text-white/30"
+                  className="modal-field resize-none"
                 />
               </label>
 
+              <label className="block">
+                <p className="mb-2 text-sm text-white/45">
+                  Objectif principal
+                </p>
+
+                <textarea
+                  value={projectObjective}
+                  onChange={(e) => setProjectObjective(e.target.value)}
+                  placeholder="Ex : Terminér toutes les révisions avant le contrôle."
+                  rows={3}
+                  className="modal-field resize-none"
+                />
+              </label>
+
+              <div className="grid grid-cols-2 gap-4">
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Date de début</p>
+
+                  <input
+                    type="date"
+                    value={projectStartDate}
+                    onChange={(e) => setProjectStartDate(e.target.value)}
+                    className="field [color-scheme:dark]"
+                  />
+                </label>
+
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Date de fin</p>
+
+                  <input
+                    type="date"
+                    value={projectEndDate}
+                    onChange={(e) => setProjectEndDate(e.target.value)}
+                    className="field [color-scheme:dark]"
+                  />
+                </label>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Priorité</p>
+
+                  <select
+                    value={projectPriority}
+                    onChange={(e) => setProjectPriority(e.target.value)}
+                    className="field"
+                  >
+                    {projectPriorities.map((priority) => (
+                      <option key={priority} value={priority}>
+                        {priority}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Statut</p>
+
+                  <select
+                    value={projectStatus}
+                    onChange={(e) => setProjectStatus(e.target.value)}
+                    className="field"
+                  >
+                    {projectStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block">
+                  <p className="mb-2 text-sm text-white/45">Catégorie</p>
+
+                  <select
+                    value={projectCategory}
+                    onChange={(e) => setProjectCategory(e.target.value)}
+                    className="field"
+                  >
+                    {projectCatégories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setProjectStarred(!projectStarred)}
+                className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 transition ${
+                  projectStarred
+                    ? "border-yellow-400/35 bg-yellow-400/10 text-yellow-300"
+                    : "border-white/10 bg-black/25 text-white/55 hover:bg-white/[0.07] hover:text-white"
+                }`}
+              >
+                <span className="text-sm font-semibold">
+                  Marquer comme projet favori
+                </span>
+
+                <Star
+                  size={20}
+                  className={
+                    projectStarred
+                      ? "fill-yellow-400 text-yellow-400"
+                      : "text-white/35"
+                  }
+                />
+              </button>
+
               <div>
-                <p className="mb-2 text-sm text-white/45">Couleur</p>
+                <p className="mb-3 text-sm text-white/45">Couleur</p>
 
                 <div className="flex flex-wrap gap-3">
                   {projectColors.map((color) => (
@@ -576,7 +847,7 @@ export default function ProjectsPage() {
                       onClick={() => setProjectColor(color)}
                       className={`h-10 w-10 rounded-2xl border transition ${
                         projectColor === color
-                          ? "border-white scale-110"
+                          ? "scale-110 border-white"
                           : "border-white/10"
                       }`}
                       style={{
@@ -613,6 +884,42 @@ export default function ProjectsPage() {
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        .field {
+          height: 52px;
+          width: 100%;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.25);
+          padding: 0 16px;
+          font-size: 14px;
+          color: white;
+          outline: none;
+        }
+
+        .modal-field {
+          width: 100%;
+          border-radius: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(0, 0, 0, 0.25);
+          padding: 16px;
+          font-size: 14px;
+          color: white;
+          outline: none;
+        }
+
+        .field:focus,
+        .modal-field:focus {
+          border-color: rgba(255, 255, 255, 0.25);
+          background: rgba(255, 255, 255, 0.06);
+        }
+
+        .field option {
+          background: #030712;
+          color: white;
+        }
+      `}</style>
     </main>
   );
 }
