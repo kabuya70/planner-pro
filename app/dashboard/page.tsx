@@ -11,8 +11,6 @@ import {
   ArrowUpRight,
   Circle,
   Repeat,
-  Clock3,
-  CalendarDays,
 } from "lucide-react";
 import {
   LineChart,
@@ -53,7 +51,7 @@ function addDays(date: Date, amount: number) {
 }
 
 function getTaskDate(task: any) {
-  const value = task.due_date || task.date || task.deadline;
+  const value = task.due_date || task.date;
   if (!value) return null;
   return String(value).slice(0, 10);
 }
@@ -66,6 +64,10 @@ function getTaskHour(task: any) {
 
 function isRoutine(task: any) {
   return task.type === "routine" || task.category === "Routine";
+}
+
+function isDone(task: any) {
+  return task?.done === true || task?.status === "done";
 }
 
 function routineDone(task: any, logs: any[], key: string) {
@@ -83,12 +85,76 @@ function projectName(task: any, projects: any[]) {
   return projects.find((p) => p.id === task.project_id)?.name || null;
 }
 
+function getProjectRealProgress(
+  projectId: string,
+  tasks: any[],
+  subtasks: any[],
+  schedules: any[]
+) {
+  const projectTasks = tasks.filter((task) => task.project_id === projectId);
+  const taskIds = projectTasks.map((task) => task.id);
+
+  const projectSchedules = schedules.filter((schedule) =>
+    taskIds.includes(schedule.task_id)
+  );
+
+  if (projectSchedules.length > 0) {
+    const done = projectSchedules.filter((schedule) => schedule.done).length;
+
+    return {
+      total: projectSchedules.length,
+      done,
+      percent: Math.round((done / projectSchedules.length) * 100),
+      label: "case(s)",
+      source: "planning",
+    };
+  }
+
+  const projectSubtasks = subtasks.filter((subtask) =>
+    taskIds.includes(subtask.task_id)
+  );
+
+  if (projectSubtasks.length > 0) {
+    const done = projectSubtasks.filter((subtask) => subtask.done).length;
+
+    return {
+      total: projectSubtasks.length,
+      done,
+      percent: Math.round((done / projectSubtasks.length) * 100),
+      label: "sous-tâche(s)",
+      source: "sous-tâches",
+    };
+  }
+
+  if (projectTasks.length > 0) {
+    const done = projectTasks.filter(isDone).length;
+
+    return {
+      total: projectTasks.length,
+      done,
+      percent: Math.round((done / projectTasks.length) * 100),
+      label: "tâche(s)",
+      source: "tâches",
+    };
+  }
+
+  return {
+    total: 0,
+    done: 0,
+    percent: 0,
+    label: "élément(s)",
+    source: "vide",
+  };
+}
+
 export default function DashboardPage() {
   const [user, setUser] = useState<any>(null);
   const [userName, setUserName] = useState("Utilisateur");
 
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [subtasks, setSubtasks] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<any[]>([]);
   const [routineLogs, setRoutineLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -131,13 +197,13 @@ export default function DashboardPage() {
     const { data: tasksData, error: tasksError } = await supabase
       .from("tasks")
       .select("*")
-      .eq("user_id", currentUser.id)
+      .or(`user_id.eq.${currentUser.id},user_id.is.null`)
       .order("created_at", { ascending: false });
 
     const { data: projectsData, error: projectsError } = await supabase
       .from("projects")
       .select("*")
-      .eq("user_id", currentUser.id)
+      .or(`user_id.eq.${currentUser.id},user_id.is.null`)
       .order("created_at", { ascending: false });
 
     if (tasksError) {
@@ -154,20 +220,44 @@ export default function DashboardPage() {
     const taskIds = currentTasks.map((task) => task.id);
 
     let logsData: any[] = [];
+    let subtasksData: any[] = [];
+    let schedulesData: any[] = [];
 
     if (taskIds.length > 0) {
-      const { data, error } = await supabase
+      const { data: logsResult } = await supabase
         .from("routine_logs")
         .select("*")
         .in("task_id", taskIds);
 
-      if (!error) {
-        logsData = data || [];
+      logsData = logsResult || [];
+
+      const { data: subtasksResult, error: subtasksError } = await supabase
+        .from("subtasks")
+        .select("*")
+        .in("task_id", taskIds);
+
+      if (subtasksError) {
+        console.error(subtasksError.message);
+      } else {
+        subtasksData = subtasksResult || [];
+      }
+
+      const { data: schedulesResult, error: schedulesError } = await supabase
+        .from("subtask_schedule")
+        .select("*")
+        .in("task_id", taskIds);
+
+      if (schedulesError) {
+        console.error(schedulesError.message);
+      } else {
+        schedulesData = schedulesResult || [];
       }
     }
 
     setTasks(currentTasks);
     setProjects((projectsData || []).filter((project) => !project.archived));
+    setSubtasks(subtasksData);
+    setSchedules(schedulesData);
     setRoutineLogs(logsData);
     setLoading(false);
   }
@@ -195,14 +285,15 @@ export default function DashboardPage() {
       return;
     }
 
+    const nextDone = !isDone(task);
+
     await supabase
       .from("tasks")
       .update({
-        done: !task.done,
-        status: !task.done ? "done" : "todo",
+        done: nextDone,
+        status: nextDone ? "done" : "todo",
       })
-      .eq("id", task.id)
-      .eq("user_id", user.id);
+      .eq("id", task.id);
 
     await loadData();
   }
@@ -219,7 +310,7 @@ export default function DashboardPage() {
 
   const completedToday = todayTasks.filter((task) => {
     if (isRoutine(task)) return routineDone(task, routineLogs, todayKey);
-    return task.done || task.status === "done";
+    return isDone(task);
   }).length;
 
   const totalToday = todayTasks.length;
@@ -230,7 +321,7 @@ export default function DashboardPage() {
   const urgent = todayTasks.filter((task) => {
     const done = isRoutine(task)
       ? routineDone(task, routineLogs, todayKey)
-      : task.done || task.status === "done";
+      : isDone(task);
 
     return task.priority === "Urgent" && !done;
   }).length;
@@ -246,9 +337,7 @@ export default function DashboardPage() {
 
       const planned = dayTasks.length;
 
-      const done = dayTasks.filter(
-        (task) => task.done || task.status === "done"
-      ).length;
+      const done = dayTasks.filter(isDone).length;
 
       const routinesDone = routineTasks.filter((task) =>
         routineDone(task, routineLogs, key)
@@ -264,7 +353,6 @@ export default function DashboardPage() {
   }, [normalTasks, routineTasks, routineLogs]);
 
   const recentTodayTasks = todayTasks.slice(0, 6);
-
   const recentProjects = projects.slice(0, 5);
 
   return (
@@ -441,7 +529,7 @@ export default function DashboardPage() {
                     {recentTodayTasks.map((task) => {
                       const done = isRoutine(task)
                         ? routineDone(task, routineLogs, todayKey)
-                        : task.done || task.status === "done";
+                        : isDone(task);
 
                       const color = taskColor(task, projects);
                       const linkedProject = projectName(task, projects);
@@ -479,7 +567,9 @@ export default function DashboardPage() {
 
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/35">
                               {linkedProject && <span>{linkedProject}</span>}
-                              {!linkedProject && <span>{task.category || "Personnel"}</span>}
+                              {!linkedProject && (
+                                <span>{task.category || "Personnel"}</span>
+                              )}
                               <span>·</span>
                               <span>{getTaskHour(task)}</span>
                             </div>
@@ -496,7 +586,7 @@ export default function DashboardPage() {
                       <h2 className="text-2xl font-semibold">Projets récents</h2>
 
                       <p className="mt-1 text-sm text-white/40">
-                        Avancement global
+                        Avancement réel
                       </p>
                     </div>
 
@@ -516,18 +606,14 @@ export default function DashboardPage() {
                     )}
 
                     {recentProjects.map((project) => {
-                      const projectTasks = normalTasks.filter(
-                        (task) => task.project_id === project.id
+                      const progress = getProjectRealProgress(
+                        project.id,
+                        tasks,
+                        subtasks,
+                        schedules
                       );
 
-                      const done = projectTasks.filter(
-                        (task) => task.done || task.status === "done"
-                      ).length;
-
-                      const percent =
-                        projectTasks.length > 0
-                          ? Math.round((done / projectTasks.length) * 100)
-                          : 0;
+                      const color = project.color || "#64748b";
 
                       return (
                         <Link
@@ -540,24 +626,35 @@ export default function DashboardPage() {
                               <FolderKanban
                                 size={16}
                                 style={{
-                                  color: project.color || "#64748b",
+                                  color,
                                 }}
                               />
 
-                              <p className="truncate text-sm font-semibold uppercase tracking-wide">
-                                {project.name || "Projet sans nom"}
-                              </p>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold uppercase tracking-wide">
+                                  {project.name || "Projet sans nom"}
+                                </p>
+
+                                <p className="mt-1 text-[11px] text-white/30">
+                                  {progress.done}/{progress.total}{" "}
+                                  {progress.label}
+                                </p>
+                              </div>
                             </div>
 
                             <span className="text-xs text-white/35">
-                              {percent}%
+                              {progress.percent}%
                             </span>
                           </div>
 
                           <div className="h-2 overflow-hidden rounded-full bg-white/10">
                             <div
-                              className="h-full rounded-full bg-white transition-all"
-                              style={{ width: `${percent}%` }}
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${progress.percent}%`,
+                                backgroundColor: color,
+                                boxShadow: `0 0 14px ${color}`,
+                              }}
                             />
                           </div>
                         </Link>
