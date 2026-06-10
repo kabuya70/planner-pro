@@ -23,8 +23,17 @@ const supabase = createClient(
 );
 
 const SLOT_HEIGHT = 76;
-const START_HOUR = 7;
-const hours = Array.from({ length: 15 }, (_, i) => i + START_HOUR);
+const START_HOUR = 4;
+const END_HOUR = 24;
+const hours = Array.from(
+  { length: END_HOUR - START_HOUR + 1 },
+  (_, i) => START_HOUR + i
+);
+
+function formatCalendarHour(hour: number) {
+  if (hour === 24) return "00:00";
+  return `${String(hour).padStart(2, "0")}:00`;
+}
 
 const weekLabels = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"];
 
@@ -156,7 +165,12 @@ function getTaskEndHour(task: any) {
 }
 
 function hourToMinutes(hour: string) {
-  const [h, m] = hour.split(":").map(Number);
+  let [h, m] = hour.split(":").map(Number);
+
+  // Pour l'affichage 04:00 → 00:00, les heures après minuit
+  // sont traitées comme la fin de la journée.
+  if (h < START_HOUR) h += 24;
+
   return (h || 0) * 60 + (m || 0);
 }
 
@@ -175,7 +189,11 @@ function getTaskDurationMinutes(task: any) {
 function minutesFromStart(hour: string) {
   if (!hour) return SLOT_HEIGHT;
 
-  const [h, m] = hour.split(":").map(Number);
+  let [h, m] = hour.split(":").map(Number);
+
+  // Dans ce calendrier, 00:00 représente minuit en fin de journée,
+  // donc on le place après 23:00 et pas tout en haut.
+  if (h < START_HOUR) h += 24;
 
   return (h - START_HOUR) * SLOT_HEIGHT + ((m || 0) / 60) * SLOT_HEIGHT;
 }
@@ -187,10 +205,13 @@ function getTaskHeight(task: any) {
 }
 
 function hourFromSlot(hour: number) {
+  if (hour >= 24) return "00:00";
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
 function minutesToHour(totalMinutes: number) {
+  if (totalMinutes >= 24 * 60) return "00:00";
+
   const clamped = Math.max(0, Math.min(23 * 60 + 59, totalMinutes));
   const h = Math.floor(clamped / 60);
   const m = clamped % 60;
@@ -207,7 +228,7 @@ function getDropHourFromColumn(e: DragEvent<HTMLElement>) {
   const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
   const minutesAfterStart = roundMinutes((y / SLOT_HEIGHT) * 60, 15);
   const startLimit = START_HOUR * 60;
-  const endLimit = (START_HOUR + hours.length - 1) * 60;
+  const endLimit = END_HOUR * 60;
 
   return minutesToHour(
     Math.max(startLimit, Math.min(startLimit + minutesAfterStart, endLimit))
@@ -1314,7 +1335,7 @@ export default function CalendarPage() {
                       key={hour}
                       className="h-[76px] border-b border-white/10 px-5 pt-4 text-xs text-white/35"
                     >
-                      {String(hour).padStart(2, "0")}:00
+                      {formatCalendarHour(hour)}
                     </div>
                   ))}
                 </div>
