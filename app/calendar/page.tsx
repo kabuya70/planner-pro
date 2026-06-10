@@ -1309,145 +1309,147 @@ export default function CalendarPage() {
 
           {view === "week" && (
             <section className="overflow-hidden rounded-[30px] border border-white/10 bg-white/[0.035] shadow-2xl shadow-black/20 backdrop-blur-xl">
-              <div className="grid grid-cols-[90px_repeat(7,1fr)] border-b border-white/10">
-                <div className="px-5 py-5 text-xs text-white/35">Heure</div>
+              <div className="max-h-[calc(100vh-330px)] overflow-y-auto overflow-x-hidden">
+                <div className="sticky top-0 z-30 grid grid-cols-[90px_repeat(7,1fr)] border-b border-white/10 bg-[#111827]/95 shadow-xl shadow-black/30 backdrop-blur-xl">
+                  <div className="px-5 py-5 text-xs text-white/35">Heure</div>
 
-                {weekDates.map((date, index) => (
-                  <div
-                    key={dateKey(date)}
-                    className="border-l border-white/10 px-5 py-5 text-center"
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
-                      {weekLabels[index]}
-                    </p>
-
-                    <p className="mt-3 text-2xl font-semibold">
-                      {date.getDate()}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-[90px_repeat(7,1fr)]">
-                <div>
-                  {hours.map((hour) => (
+                  {weekDates.map((date, index) => (
                     <div
-                      key={hour}
-                      className="h-[76px] border-b border-white/10 px-5 pt-4 text-xs text-white/35"
+                      key={dateKey(date)}
+                      className="border-l border-white/10 px-5 py-5 text-center"
                     >
-                      {formatCalendarHour(hour)}
+                      <p className="text-[11px] uppercase tracking-[0.35em] text-white/35">
+                        {weekLabels[index]}
+                      </p>
+
+                      <p className="mt-3 text-2xl font-semibold">
+                        {date.getDate()}
+                      </p>
                     </div>
                   ))}
                 </div>
 
-                {weekDates.map((date) => {
-                  const key = dateKey(date);
-                  const dayTasks = getVisibleTasksForDate(
-                    tasks,
-                    key,
-                    routineLogs,
-                    subtasks,
-                    schedules,
-                    projects
-                  );
+                <div className="grid grid-cols-[90px_repeat(7,1fr)]">
+                  <div>
+                    {hours.map((hour) => (
+                      <div
+                        key={hour}
+                        className="h-[76px] border-b border-white/10 px-5 pt-4 text-xs text-white/35"
+                      >
+                        {formatCalendarHour(hour)}
+                      </div>
+                    ))}
+                  </div>
 
-                  return (
-                    <div
-                      key={key}
-                      className="relative border-l border-white/10"
-                      style={{ height: hours.length * SLOT_HEIGHT }}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = "move";
-                      }}
-                      onDrop={(e) => handleColumnDrop(e, key)}
-                    >
-                      {hours.map((hour) => (
-                        <div
-                          key={hour}
-                          className="h-[76px] border-b border-white/10"
-                        />
-                      ))}
+                  {weekDates.map((date) => {
+                    const key = dateKey(date);
+                    const dayTasks = getVisibleTasksForDate(
+                      tasks,
+                      key,
+                      routineLogs,
+                      subtasks,
+                      schedules,
+                      projects
+                    );
 
-                      {dayTasks.map((task) => {
-                        const start = getTaskHour(task) || "08:00";
-                        const end = getTaskEndHour(task);
-                        const color = getTaskColor(task, projects);
-                        const projectName = getProjectName(task, projects);
-                        const done = isRoutine(task)
-                          ? task.routine_done_today
-                          : isDone(task);
-
-                        return (
+                    return (
+                      <div
+                        key={key}
+                        className="relative border-l border-white/10"
+                        style={{ height: hours.length * SLOT_HEIGHT }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                        }}
+                        onDrop={(e) => handleColumnDrop(e, key)}
+                      >
+                        {hours.map((hour) => (
                           <div
-                            key={`${task.id}-${key}`}
-                            draggable
-                            onClick={() => openTaskFromCalendar(task)}
-                            onDragStart={(e) => handleDragStart(e, task)}
-                            className={`absolute left-2 right-2 z-10 cursor-pointer overflow-hidden rounded-xl px-3 py-2 text-xs text-white shadow-md transition hover:scale-[1.01] hover:bg-white/[0.08] ${
-                              done ? "opacity-55" : ""
-                            }`}
-                            style={{
-                              top: `${minutesFromStart(start)}px`,
-                              height: `${getTaskHeight(task)}px`,
-                              background: "rgba(15, 23, 42, 0.72)",
-                              borderLeft: `4px solid ${color}`,
-                              borderTop: `2px solid ${color}`,
-                              borderRight: "1px solid rgba(255,255,255,0.08)",
-                              borderBottom: "1px solid rgba(255,255,255,0.08)",
-                              boxShadow: `0 0 12px ${color}35`,
-                              backdropFilter: "blur(14px)",
-                            }}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <p
-                                  className={`truncate font-semibold ${
-                                    done ? "line-through text-white/45" : ""
-                                  }`}
+                            key={hour}
+                            className="h-[76px] border-b border-white/10"
+                          />
+                        ))}
+
+                        {dayTasks.map((task) => {
+                          const start = getTaskHour(task) || "08:00";
+                          const end = getTaskEndHour(task);
+                          const color = getTaskColor(task, projects);
+                          const projectName = getProjectName(task, projects);
+                          const done = isRoutine(task)
+                            ? task.routine_done_today
+                            : isDone(task);
+
+                          return (
+                            <div
+                              key={`${task.id}-${key}`}
+                              draggable
+                              onClick={() => openTaskFromCalendar(task)}
+                              onDragStart={(e) => handleDragStart(e, task)}
+                              className={`absolute left-2 right-2 z-10 cursor-pointer overflow-hidden rounded-xl px-3 py-2 text-xs text-white shadow-md transition hover:scale-[1.01] hover:bg-white/[0.08] ${
+                                done ? "opacity-55" : ""
+                              }`}
+                              style={{
+                                top: `${minutesFromStart(start)}px`,
+                                height: `${getTaskHeight(task)}px`,
+                                background: "rgba(15, 23, 42, 0.72)",
+                                borderLeft: `4px solid ${color}`,
+                                borderTop: `2px solid ${color}`,
+                                borderRight: "1px solid rgba(255,255,255,0.08)",
+                                borderBottom: "1px solid rgba(255,255,255,0.08)",
+                                boxShadow: `0 0 12px ${color}35`,
+                                backdropFilter: "blur(14px)",
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p
+                                    className={`truncate font-semibold ${
+                                      done ? "line-through text-white/45" : ""
+                                    }`}
+                                  >
+                                    {isRoutine(task) && (
+                                      <Repeat size={12} className="mr-1 inline" />
+                                    )}
+                                    {taskTitle(task)}
+                                  </p>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleTaskDone(task, key);
+                                  }}
+                                  className="shrink-0 text-white/70 hover:text-white"
                                 >
-                                  {isRoutine(task) && (
-                                    <Repeat size={12} className="mr-1 inline" />
+                                  {done ? (
+                                    <CheckCircle2 size={15} />
+                                  ) : (
+                                    <Circle size={15} />
                                   )}
-                                  {taskTitle(task)}
-                                </p>
+                                </button>
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleTaskDone(task, key);
-                                }}
-                                className="shrink-0 text-white/70 hover:text-white"
-                              >
-                                {done ? (
-                                  <CheckCircle2 size={15} />
-                                ) : (
-                                  <Circle size={15} />
-                                )}
-                              </button>
-                            </div>
-
-                            <p className="mt-1 truncate text-[11px] text-white/75">
-                              {start}
-                              {end ? ` - ${end}` : ""}
-                            </p>
-
-                            {projectName && (
-                              <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-white/65">
-                                <FolderKanban size={11} />
-                                {isProjectScheduleItem(task)
-                                  ? `Projet · ${projectName}`
-                                  : projectName}
+                              <p className="mt-1 truncate text-[11px] text-white/75">
+                                {start}
+                                {end ? ` - ${end}` : ""}
                               </p>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+
+                              {projectName && (
+                                <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-white/65">
+                                  <FolderKanban size={11} />
+                                  {isProjectScheduleItem(task)
+                                    ? `Projet · ${projectName}`
+                                    : projectName}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </section>
           )}
