@@ -124,8 +124,10 @@ function getTaskDate(task: any) {
 }
 
 function getTaskHour(task: any) {
+  if (task?.__startTime) return String(task.__startTime).slice(0, 5);
   if (task?.hour) return String(task.hour).slice(0, 5);
   if (task?.start_time) return String(task.start_time).slice(0, 5);
+  if (task?.startTime) return String(task.startTime).slice(0, 5);
 
   return "08:00";
 }
@@ -143,7 +145,9 @@ function addMinutes(hour: string, minutes: number) {
 }
 
 function getTaskEndHour(task: any) {
+  if (task?.__endTime) return String(task.__endTime).slice(0, 5);
   if (task?.end_time) return String(task.end_time).slice(0, 5);
+  if (task?.endTime) return String(task.endTime).slice(0, 5);
 
   const start = getTaskHour(task);
   if (!start) return "09:00";
@@ -186,6 +190,30 @@ function hourFromSlot(hour: number) {
   return `${String(hour).padStart(2, "0")}:00`;
 }
 
+function minutesToHour(totalMinutes: number) {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, totalMinutes));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function roundMinutes(totalMinutes: number, step = 15) {
+  return Math.round(totalMinutes / step) * step;
+}
+
+function getDropHourFromColumn(e: DragEvent<HTMLElement>) {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+  const minutesAfterStart = roundMinutes((y / SLOT_HEIGHT) * 60, 15);
+  const startLimit = START_HOUR * 60;
+  const endLimit = (START_HOUR + hours.length - 1) * 60;
+
+  return minutesToHour(
+    Math.max(startLimit, Math.min(startLimit + minutesAfterStart, endLimit))
+  );
+}
+
 function normalizeColor(color: string | null | undefined) {
   if (!color) return "#64748b";
 
@@ -215,12 +243,16 @@ function getProjectForTask(task: any, projects: any[]) {
 }
 
 function getProjectName(task: any, projects: any[]) {
+  if (task?.__projectName) return task.__projectName;
+
   const project = getProjectForTask(task, projects);
 
   return project?.name || null;
 }
 
 function getTaskColor(task: any, projects: any[]) {
+  if (task?.__color) return normalizeColor(task.__color);
+
   const project = getProjectForTask(task, projects);
 
   return normalizeColor(
@@ -265,15 +297,253 @@ function routineDoneForDate(taskId: string, day: string, routineLogs: any[]) {
   );
 }
 
-function shouldShowRoutineOnDate(task: any, day: string) {
-  const start = getTaskDate(task);
-  if (!start) return true;
+const jsDayToRoutineDay = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
-  return start <= day;
+function normalizeRoutineDay(day: any) {
+  const value = String(day || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const map: Record<string, string> = {
+    mon: "mon",
+    monday: "mon",
+    lundi: "mon",
+    lun: "mon",
+    tue: "tue",
+    tuesday: "tue",
+    mardi: "tue",
+    mar: "tue",
+    wed: "wed",
+    wednesday: "wed",
+    mercredi: "wed",
+    mer: "wed",
+    thu: "thu",
+    thursday: "thu",
+    jeudi: "thu",
+    jeu: "thu",
+    fri: "fri",
+    friday: "fri",
+    vendredi: "fri",
+    ven: "fri",
+    sat: "sat",
+    saturday: "sat",
+    samedi: "sat",
+    sam: "sat",
+    sun: "sun",
+    sunday: "sun",
+    dimanche: "sun",
+    dim: "sun",
+  };
+
+  return map[value] || null;
 }
 
-function getVisibleTasksForDate(tasks: any[], day: string, routineLogs: any[]) {
-  return tasks
+function getRoutineRepeatDays(task: any) {
+  const raw =
+    task?.repeat_days ??
+    task?.repeatDays ??
+    task?.routine_days ??
+    task?.week_days ??
+    task?.days;
+
+  if (!raw) return [];
+
+  let values: any[] = [];
+
+  if (Array.isArray(raw)) {
+    values = raw;
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      values = Array.isArray(parsed) ? parsed : raw.split(",");
+    } catch {
+      values = raw.split(",");
+    }
+  }
+
+  return values.map(normalizeRoutineDay).filter(Boolean);
+}
+
+function getWeekDayKeyFromDate(day: string) {
+  const date = new Date(`${day}T12:00:00`);
+  return jsDayToRoutineDay[date.getDay()];
+}
+
+function shouldShowRoutineOnDate(task: any, day: string) {
+  const start = getTaskDate(task);
+  if (start && start > day) return false;
+
+  const repeatDays = getRoutineRepeatDays(task);
+
+  // Compatibilité avec les anciennes routines : si aucun jour n'est encore choisi,
+  // elles restent visibles tous les jours au lieu de disparaître.
+  if (repeatDays.length === 0) return true;
+
+  return repeatDays.includes(getWeekDayKeyFromDate(day));
+}
+
+function isProjectScheduleItem(task: any) {
+  return task?.__kind === "project_schedule";
+}
+
+function looksLikeDateValue(value: any) {
+  if (!value) return false;
+  return /^\d{4}-\d{2}-\d{2}/.test(String(value));
+}
+
+const scheduleDateColumnPriority = [
+  "scheduled_date",
+  "schedule_date",
+  "planned_date",
+  "date",
+  "due_date",
+  "day",
+  "scheduled_day",
+  "scheduled_for",
+  "planned_for",
+];
+
+function getScheduleDateColumn(schedule: any) {
+  if (!schedule) return null;
+
+  for (const key of scheduleDateColumnPriority) {
+    if (Object.prototype.hasOwnProperty.call(schedule, key) && looksLikeDateValue(schedule[key])) {
+      return key;
+    }
+  }
+
+  return (
+    Object.keys(schedule).find((key) => {
+      const cleanKey = key.toLowerCase();
+      const canBeDate =
+        cleanKey.includes("date") ||
+        cleanKey.includes("day") ||
+        cleanKey.includes("scheduled") ||
+        cleanKey.includes("planned") ||
+        cleanKey.includes("due");
+
+      return canBeDate && looksLikeDateValue(schedule[key]);
+    }) || null
+  );
+}
+
+function getScheduleWritableDateColumn(schedule: any) {
+  if (!schedule) return null;
+
+  for (const key of scheduleDateColumnPriority) {
+    if (Object.prototype.hasOwnProperty.call(schedule, key)) {
+      return key;
+    }
+  }
+
+  return (
+    Object.keys(schedule).find((key) => {
+      const cleanKey = key.toLowerCase();
+      return (
+        cleanKey.includes("date") ||
+        cleanKey.includes("day") ||
+        cleanKey.includes("scheduled") ||
+        cleanKey.includes("planned") ||
+        cleanKey.includes("due")
+      );
+    }) || null
+  );
+}
+
+function getScheduleDate(schedule: any) {
+  const dateColumn = getScheduleDateColumn(schedule);
+  const value = dateColumn ? schedule?.[dateColumn] : null;
+
+  if (!value) return null;
+  return String(value).slice(0, 10);
+}
+
+function getScheduleStartHour(schedule: any) {
+  const value =
+    schedule?.start_time || schedule?.startTime || schedule?.hour || schedule?.time;
+
+  if (!value) return "08:00";
+  return String(value).slice(0, 5);
+}
+
+function getScheduleEndHour(schedule: any) {
+  const value =
+    schedule?.end_time ||
+    schedule?.endTime ||
+    schedule?.finish_time ||
+    schedule?.finishTime;
+
+  if (!value) return null;
+  return String(value).slice(0, 5);
+}
+
+function scheduleToCalendarTask(
+  schedule: any,
+  tasks: any[],
+  subtasks: any[],
+  projects: any[]
+) {
+  const subtask = subtasks.find((item) => item.id === schedule.subtask_id);
+  const parentTask = tasks.find(
+    (task) => task.id === (schedule.task_id || subtask?.task_id)
+  );
+
+  if (!parentTask && !subtask) return null;
+
+  const project = projects.find(
+    (item) => item.id === (parentTask?.project_id || subtask?.project_id)
+  );
+  const scheduleDate = getScheduleDate(schedule);
+
+  if (!scheduleDate) return null;
+
+  const start = getScheduleStartHour(schedule);
+  const end = getScheduleEndHour(schedule) || addMinutes(start, 60);
+  const title =
+    subtask?.name ||
+    subtask?.title ||
+    schedule?.name ||
+    schedule?.title ||
+    "Sous-tâche programmée";
+
+  return {
+    ...(parentTask || {}),
+    id: `schedule-${schedule.id}`,
+    __kind: "project_schedule",
+    __scheduleId: schedule.id,
+    __subtaskId: subtask?.id || schedule.subtask_id,
+    __parentTaskId: parentTask?.id || schedule.task_id,
+    __projectName: project?.name || parentTask?.project_name || "Projet",
+    __color: project?.color || parentTask?.color || "#3b82f6",
+    __startTime: start,
+    __endTime: end,
+    name: title,
+    title,
+    date: scheduleDate,
+    due_date: scheduleDate,
+    hour: start,
+    start_time: start,
+    end_time: end,
+    done: schedule.done === true || subtask?.done === true,
+    status: schedule.done || subtask?.done ? "done" : "todo",
+    project_id: parentTask?.project_id || subtask?.project_id || null,
+    calendar_date: scheduleDate,
+    category: "Projet",
+    type: "project_subtask",
+  };
+}
+
+function getVisibleTasksForDate(
+  tasks: any[],
+  day: string,
+  routineLogs: any[],
+  subtasks: any[] = [],
+  schedules: any[] = [],
+  projects: any[] = []
+) {
+  const classicTasks = tasks
     .filter((task) => {
       if (isRoutine(task)) return shouldShowRoutineOnDate(task, day);
 
@@ -288,6 +558,15 @@ function getVisibleTasksForDate(tasks: any[], day: string, routineLogs: any[]) {
         routine_done_today: routineDoneForDate(task.id, day, routineLogs),
       };
     });
+
+  const projectScheduleTasks = schedules
+    .map((schedule) => scheduleToCalendarTask(schedule, tasks, subtasks, projects))
+    .filter(Boolean)
+    .filter((task: any) => getTaskDate(task) === day);
+
+  return [...classicTasks, ...projectScheduleTasks].sort((a: any, b: any) =>
+    getTaskHour(a).localeCompare(getTaskHour(b))
+  );
 }
 
 export default function CalendarPage() {
@@ -295,6 +574,8 @@ export default function CalendarPage() {
 
   const [tasks, setTasks] = useState<any[]>([]);
   const [projects, setProjects] = useState<any[]>([]);
+  const [subtasks, setSubtasks] = useState<any[]>([]);
+  const [schedules, setSchedules] = useState<any[]>([]);
   const [routineLogs, setRoutineLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -364,8 +645,11 @@ export default function CalendarPage() {
       return;
     }
 
-    const taskIds = (tasksData || []).map((task) => task.id);
+    const currentTasks = tasksData || [];
+    const taskIds = currentTasks.map((task) => task.id);
     let logsData: any[] = [];
+    let subtasksData: any[] = [];
+    let schedulesData: any[] = [];
 
     if (taskIds.length > 0) {
       const { data: logs } = await supabase
@@ -374,10 +658,62 @@ export default function CalendarPage() {
         .in("task_id", taskIds);
 
       logsData = logs || [];
+
+      const { data: subtasksResult, error: subtasksError } = await supabase
+        .from("subtasks")
+        .select("*")
+        .in("task_id", taskIds);
+
+      if (subtasksError) {
+        console.error(subtasksError.message);
+      } else {
+        subtasksData = subtasksResult || [];
+      }
+
+      const scheduleRows: any[] = [];
+
+      const { data: schedulesByTask, error: schedulesByTaskError } =
+        await supabase
+          .from("subtask_schedule")
+          .select("*")
+          .in("task_id", taskIds);
+
+      if (schedulesByTaskError) {
+        console.error(schedulesByTaskError.message);
+      } else {
+        scheduleRows.push(...(schedulesByTask || []));
+      }
+
+      const subtaskIds = subtasksData.map((subtask) => subtask.id);
+
+      if (subtaskIds.length > 0) {
+        const { data: schedulesBySubtask, error: schedulesBySubtaskError } =
+          await supabase
+            .from("subtask_schedule")
+            .select("*")
+            .in("subtask_id", subtaskIds);
+
+        if (schedulesBySubtaskError) {
+          console.error(schedulesBySubtaskError.message);
+        } else {
+          scheduleRows.push(...(schedulesBySubtask || []));
+        }
+      }
+
+      schedulesData = Array.from(
+        new Map(
+          scheduleRows.map((schedule, index) => [
+            schedule.id || `${schedule.task_id}-${schedule.subtask_id}-${index}`,
+            schedule,
+          ])
+        ).values()
+      );
     }
 
-    setTasks(tasksData || []);
+    setTasks(currentTasks);
     setProjects(projectsData || []);
+    setSubtasks(subtasksData);
+    setSchedules(schedulesData);
     setRoutineLogs(logsData);
     setLoading(false);
   }
@@ -421,6 +757,35 @@ export default function CalendarPage() {
 
     setSaving(true);
 
+    if (isProjectScheduleItem(selectedTask)) {
+      const nextDone = editStatus === "done";
+      const error = await updateProjectScheduleDateTime(
+        selectedTask.__scheduleId,
+        editDate,
+        editStart,
+        editEnd,
+        { done: nextDone }
+      );
+
+      if (error) {
+        alert(error.message);
+        setSaving(false);
+        return;
+      }
+
+      if (selectedTask.__subtaskId) {
+        await supabase
+          .from("subtasks")
+          .update({ done: nextDone })
+          .eq("id", selectedTask.__subtaskId);
+      }
+
+      await loadData();
+      setSaving(false);
+      closeTaskModal();
+      return;
+    }
+
     const payload: any = {
       name: editName.trim(),
       description: editDescription.trim() || null,
@@ -463,6 +828,25 @@ export default function CalendarPage() {
   async function deleteSelectedTask() {
     if (!selectedTask) return;
 
+    if (isProjectScheduleItem(selectedTask)) {
+      const okSchedule = confirm("Retirer cette sous-tâche du calendrier ?");
+      if (!okSchedule) return;
+
+      const { error } = await supabase
+        .from("subtask_schedule")
+        .delete()
+        .eq("id", selectedTask.__scheduleId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      await loadData();
+      closeTaskModal();
+      return;
+    }
+
     const ok = confirm("Supprimer cette tâche ?");
     if (!ok) return;
 
@@ -488,6 +872,30 @@ export default function CalendarPage() {
   }
 
   async function toggleTaskDone(task: any, day?: string) {
+    if (isProjectScheduleItem(task)) {
+      const nextDone = !isDone(task);
+
+      const { error } = await supabase
+        .from("subtask_schedule")
+        .update({ done: nextDone })
+        .eq("id", task.__scheduleId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      if (task.__subtaskId) {
+        await supabase
+          .from("subtasks")
+          .update({ done: nextDone })
+          .eq("id", task.__subtaskId);
+      }
+
+      await loadData();
+      return;
+    }
+
     if (isRoutine(task)) {
       const currentDay = day || task.calendar_date || todayLocal();
 
@@ -560,6 +968,80 @@ export default function CalendarPage() {
         };
       })
     );
+  }
+
+  async function updateProjectScheduleDateTime(
+    scheduleId: string,
+    newDate: string,
+    start: string,
+    end: string,
+    extraPayload: Record<string, any> = {}
+  ) {
+    const schedule = schedules.find((item) => String(item.id) === String(scheduleId));
+    const dateColumn = getScheduleWritableDateColumn(schedule);
+
+    const basePayload: any = {
+      ...extraPayload,
+      start_time: start,
+      end_time: end,
+    };
+
+    // Cas propre : on a détecté la vraie colonne date existante dans ta table.
+    if (dateColumn) {
+      const { error } = await supabase
+        .from("subtask_schedule")
+        .update({
+          ...basePayload,
+          [dateColumn]: newDate,
+        })
+        .eq("id", scheduleId);
+
+      return error || null;
+    }
+
+    // Sécurité : si ta table n'a vraiment aucune colonne de date détectable,
+    // on déplace au moins l'heure sans envoyer une colonne inexistante à Supabase.
+    const { error } = await supabase
+      .from("subtask_schedule")
+      .update(basePayload)
+      .eq("id", scheduleId);
+
+    if (error) return error;
+
+    const oldDate = schedule ? getScheduleDate(schedule) : null;
+
+    if (oldDate && oldDate !== newDate) {
+      return {
+        message:
+          "L'heure a été déplacée, mais le changement de jour demande une vraie colonne date dans subtask_schedule.",
+      };
+    }
+
+    return null;
+  }
+
+  async function moveProjectSchedule(scheduleId: string, newDate: string, newHour?: string) {
+    const schedule = schedules.find((item) => String(item.id) === String(scheduleId));
+    if (!schedule) return;
+
+    const calendarTask = scheduleToCalendarTask(schedule, tasks, subtasks, projects);
+    const start = newHour || getScheduleStartHour(schedule);
+    const duration = calendarTask ? getTaskDurationMinutes(calendarTask) : 60;
+    const end = addMinutes(start, duration);
+
+    const error = await updateProjectScheduleDateTime(
+      scheduleId,
+      newDate,
+      start,
+      end
+    );
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await loadData();
   }
 
   async function moveTask(taskId: string, newDate: string, newHour?: string) {
@@ -638,12 +1120,49 @@ export default function CalendarPage() {
 
   function handleDrop(e: DragEvent, newDate: string, newHour?: string) {
     e.preventDefault();
+    e.stopPropagation();
 
-    const taskId = e.dataTransfer.getData("taskId");
+    const raw = e.dataTransfer.getData("text/plain");
+    const customScheduleId = e.dataTransfer.getData("scheduleId");
+    const customTaskId = e.dataTransfer.getData("taskId");
+
+    const scheduleId =
+      customScheduleId ||
+      (raw.startsWith("schedule:") ? raw.replace("schedule:", "") : "");
+
+    if (scheduleId) {
+      moveProjectSchedule(scheduleId, newDate, newHour);
+      return;
+    }
+
+    const taskId =
+      customTaskId ||
+      (raw.startsWith("task:") ? raw.replace("task:", "") : raw);
 
     if (!taskId) return;
 
     moveTask(taskId, newDate, newHour);
+  }
+
+  function handleColumnDrop(e: DragEvent<HTMLElement>, newDate: string) {
+    const newHour = getDropHourFromColumn(e);
+    handleDrop(e, newDate, newHour);
+  }
+
+  function handleDragStart(e: DragEvent<HTMLElement>, task: any) {
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = "move";
+
+    if (isProjectScheduleItem(task)) {
+      const id = String(task.__scheduleId);
+      e.dataTransfer.setData("scheduleId", id);
+      e.dataTransfer.setData("text/plain", `schedule:${id}`);
+      return;
+    }
+
+    const id = String(task.id);
+    e.dataTransfer.setData("taskId", id);
+    e.dataTransfer.setData("text/plain", `task:${id}`);
   }
 
   const currentTitle = useMemo(() => {
@@ -802,19 +1321,29 @@ export default function CalendarPage() {
 
                 {weekDates.map((date) => {
                   const key = dateKey(date);
-                  const dayTasks = getVisibleTasksForDate(tasks, key, routineLogs);
+                  const dayTasks = getVisibleTasksForDate(
+                    tasks,
+                    key,
+                    routineLogs,
+                    subtasks,
+                    schedules,
+                    projects
+                  );
 
                   return (
                     <div
                       key={key}
                       className="relative border-l border-white/10"
                       style={{ height: hours.length * SLOT_HEIGHT }}
-                      onDragOver={(e) => e.preventDefault()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                      }}
+                      onDrop={(e) => handleColumnDrop(e, key)}
                     >
                       {hours.map((hour) => (
                         <div
                           key={hour}
-                          onDrop={(e) => handleDrop(e, key, hourFromSlot(hour))}
                           className="h-[76px] border-b border-white/10"
                         />
                       ))}
@@ -833,9 +1362,7 @@ export default function CalendarPage() {
                             key={`${task.id}-${key}`}
                             draggable
                             onClick={() => openTaskFromCalendar(task)}
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData("taskId", task.id);
-                            }}
+                            onDragStart={(e) => handleDragStart(e, task)}
                             className={`absolute left-2 right-2 z-10 cursor-pointer overflow-hidden rounded-xl px-3 py-2 text-xs text-white shadow-md transition hover:scale-[1.01] hover:bg-white/[0.08] ${
                               done ? "opacity-55" : ""
                             }`}
@@ -889,7 +1416,9 @@ export default function CalendarPage() {
                             {projectName && (
                               <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-white/65">
                                 <FolderKanban size={11} />
-                                {projectName}
+                                {isProjectScheduleItem(task)
+                                  ? `Projet · ${projectName}`
+                                  : projectName}
                               </p>
                             )}
                           </div>
@@ -918,14 +1447,22 @@ export default function CalendarPage() {
               <div className="grid grid-cols-7">
                 {monthGrid.map((date) => {
                   const key = dateKey(date);
-                  const dayTasks = getVisibleTasksForDate(tasks, key, routineLogs).sort(
-                    (a, b) => getTaskHour(a).localeCompare(getTaskHour(b))
-                  );
+                  const dayTasks = getVisibleTasksForDate(
+                    tasks,
+                    key,
+                    routineLogs,
+                    subtasks,
+                    schedules,
+                    projects
+                  ).sort((a, b) => getTaskHour(a).localeCompare(getTaskHour(b)));
 
                   return (
                     <div
                       key={key}
-                      onDragOver={(e) => e.preventDefault()}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                      }}
                       onDrop={(e) => handleDrop(e, key)}
                       className={`min-h-[140px] border-l border-t border-white/10 p-3 first:border-l-0 ${
                         isSameMonth(date, currentDate)
@@ -955,9 +1492,7 @@ export default function CalendarPage() {
                               key={`${task.id}-${key}`}
                               draggable
                               onClick={() => openTaskFromCalendar(task)}
-                              onDragStart={(e) => {
-                                e.dataTransfer.setData("taskId", task.id);
-                              }}
+                              onDragStart={(e) => handleDragStart(e, task)}
                               className={`cursor-pointer truncate rounded-lg border border-white/10 px-2 py-1 text-xs text-white transition hover:scale-[1.01] hover:bg-white/[0.08] ${
                                 done ? "opacity-55" : ""
                               }`}
@@ -979,6 +1514,7 @@ export default function CalendarPage() {
                                 {done ? "✓" : "○"}
                               </span>
                               {isRoutine(task) ? "↻ " : ""}
+                              {isProjectScheduleItem(task) ? "▣ " : ""}
                               {getTaskHour(task) || "--:--"} · {taskTitle(task)}
                             </div>
                           );

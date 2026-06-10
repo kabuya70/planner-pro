@@ -78,6 +78,81 @@ function getTaskHour(task: any) {
   return "";
 }
 
+
+function normalizeTime(value: any) {
+  if (!value) return "";
+  return String(value).slice(0, 5);
+}
+
+function timeToMinutes(value: any) {
+  const time = normalizeTime(value);
+  const [h, m] = time.split(":").map(Number);
+
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+
+  return h * 60 + m;
+}
+
+function minutesToTime(total: number) {
+  const safeTotal = Math.max(0, Math.min(23 * 60 + 59, total));
+  const h = Math.floor(safeTotal / 60);
+  const m = safeTotal % 60;
+
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function roundUpToStep(value: number, step = 30) {
+  return Math.ceil(value / step) * step;
+}
+
+function getTaskEndHour(task: any) {
+  if (task?.end_time) return normalizeTime(task.end_time);
+  if (task?.end) return normalizeTime(task.end);
+  return "";
+}
+
+function getBaseScheduleRange(task: any) {
+  const start = timeToMinutes(getTaskHour(task)) ?? 8 * 60;
+  const rawEnd = timeToMinutes(getTaskEndHour(task));
+  const duration = rawEnd && rawEnd > start ? rawEnd - start : 60;
+
+  return {
+    start,
+    duration: Math.max(30, duration),
+  };
+}
+
+function intervalsOverlap(
+  startA: number,
+  endA: number,
+  startB: number,
+  endB: number
+) {
+  return startA < endB && endA > startB;
+}
+
+function isRoutineTask(task: any) {
+  return task?.type === "routine" || task?.category === "Routine";
+}
+
+const weekDayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+function getWeekDayKey(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  return weekDayKeys[date.getDay()];
+}
+
+function routineRunsOnDate(task: any, plannedDate: string) {
+  if (!isRoutineTask(task)) return false;
+
+  const repeatDays = Array.isArray(task?.repeat_days) ? task.repeat_days : [];
+
+  if (repeatDays.length === 0) return true;
+
+  return repeatDays.includes(getWeekDayKey(plannedDate));
+}
+
+
 function isDone(task: any) {
   return task?.done === true || task?.status === "done";
 }
@@ -357,6 +432,99 @@ export default function TaskSubtasksPage() {
     await syncTaskStatus(nextSchedules);
   }
 
+  async function getBusyIntervalsForDate(plannedDate: string) {
+    const intervals: { start: number; end: number }[] = [];
+
+    let tasksQuery = supabase.from("tasks").select("*");
+
+    if (user?.id) {
+      tasksQuery = tasksQuery.eq("user_id", user.id);
+    }
+
+    const { data: allTasks, error: tasksError } = await tasksQuery;
+
+    if (tasksError) {
+      alert(tasksError.message);
+      return intervals;
+    }
+
+    const tasksOfDay = (allTasks || []).filter((item: any) => {
+      if (isRoutineTask(item)) return routineRunsOnDate(item, plannedDate);
+      return getTaskDate(item) === plannedDate;
+    });
+
+    tasksOfDay.forEach((item: any) => {
+      const start = timeToMinutes(getTaskHour(item));
+      if (start === null) return;
+
+      const endFromTask = timeToMinutes(getTaskEndHour(item));
+      const end = endFromTask && endFromTask > start ? endFromTask : start + 60;
+
+      intervals.push({ start, end });
+    });
+
+    const { data: daySchedules, error: schedulesError } = await supabase
+      .from("subtask_schedule")
+      .select("*")
+      .eq("planned_date", plannedDate);
+
+    if (schedulesError) {
+      alert(schedulesError.message);
+      return intervals;
+    }
+
+    (daySchedules || []).forEach((item: any) => {
+      const parentTask = (allTasks || []).find(
+        (taskItem: any) => taskItem.id === item.task_id
+      );
+
+      const start = timeToMinutes(
+        item.start_time || item.hour || getTaskHour(parentTask)
+      );
+
+      if (start === null) return;
+
+      const rawEnd = timeToMinutes(
+        item.end_time || item.finish_time || getTaskEndHour(parentTask)
+      );
+
+      const end = rawEnd && rawEnd > start ? rawEnd : start + 60;
+
+      intervals.push({ start, end });
+    });
+
+    return intervals.sort((a, b) => a.start - b.start);
+  }
+
+  async function findAvailableScheduleSlot(plannedDate: string) {
+    const base = getBaseScheduleRange(task);
+    const busyIntervals = await getBusyIntervalsForDate(plannedDate);
+
+    let candidateStart = roundUpToStep(base.start, 30);
+    const latestStart = 23 * 60 - base.duration;
+
+    while (candidateStart <= latestStart) {
+      const candidateEnd = candidateStart + base.duration;
+      const conflict = busyIntervals.find((item) =>
+        intervalsOverlap(candidateStart, candidateEnd, item.start, item.end)
+      );
+
+      if (!conflict) {
+        return {
+          start_time: minutesToTime(candidateStart),
+          end_time: minutesToTime(candidateEnd),
+        };
+      }
+
+      candidateStart = roundUpToStep(conflict.end, 30);
+    }
+
+    return {
+      start_time: minutesToTime(base.start),
+      end_time: minutesToTime(base.start + base.duration),
+    };
+  }
+
   async function toggleScheduleCell(subtask: any, plannedDate: string) {
     if (!task?.id || !realProjectId) return;
 
@@ -391,11 +559,15 @@ export default function TaskSubtasksPage() {
       return;
     }
 
+    const availableSlot = await findAvailableScheduleSlot(plannedDate);
+
     const payload: any = {
       subtask_id: subtask.id,
       task_id: task.id,
       project_id: realProjectId,
       planned_date: plannedDate,
+      start_time: availableSlot.start_time,
+      end_time: availableSlot.end_time,
       done: true,
     };
 
@@ -780,13 +952,21 @@ export default function TaskSubtasksPage() {
                                   : "border-white/10 bg-white/[0.035] text-white/25"
                               }`}
                             >
-                              {checked ? (
-                                <CheckCircle2 size={20} />
-                              ) : planned ? (
-                                <Circle size={20} />
-                              ) : (
-                                <Plus size={15} />
-                              )}
+                              <span className="flex flex-col items-center leading-none">
+                                {checked ? (
+                                  <CheckCircle2 size={20} />
+                                ) : planned ? (
+                                  <Circle size={20} />
+                                ) : (
+                                  <Plus size={15} />
+                                )}
+
+                                {planned && schedule?.start_time && (
+                                  <span className="mt-1 text-[9px] font-semibold">
+                                    {String(schedule.start_time).slice(0, 5)}
+                                  </span>
+                                )}
+                              </span>
                             </button>
                           </div>
                         );

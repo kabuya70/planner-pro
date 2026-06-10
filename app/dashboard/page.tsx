@@ -24,10 +24,222 @@ import {
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
 );
 
 const weekDays = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+type WeekDayKey = "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
+
+const jsDayToWeekDay: WeekDayKey[] = [
+  "sun",
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+];
+
+function getWeekDayKey(dateString: string): WeekDayKey {
+  const date = new Date(`${dateString}T12:00:00`);
+  return jsDayToWeekDay[date.getDay()];
+}
+
+function normalizeDayKey(day: any): WeekDayKey | null {
+  const value = String(day || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+  const map: Record<string, WeekDayKey> = {
+    mon: "mon",
+    monday: "mon",
+    lundi: "mon",
+    lun: "mon",
+    tue: "tue",
+    tuesday: "tue",
+    mardi: "tue",
+    mar: "tue",
+    wed: "wed",
+    wednesday: "wed",
+    mercredi: "wed",
+    mer: "wed",
+    thu: "thu",
+    thursday: "thu",
+    jeudi: "thu",
+    jeu: "thu",
+    fri: "fri",
+    friday: "fri",
+    vendredi: "fri",
+    ven: "fri",
+    sat: "sat",
+    saturday: "sat",
+    samedi: "sat",
+    sam: "sat",
+    sun: "sun",
+    sunday: "sun",
+    dimanche: "sun",
+    dim: "sun",
+  };
+
+  return map[value] || null;
+}
+
+function getRoutineRepeatDays(task: any): WeekDayKey[] {
+  const raw =
+    task.repeat_days ??
+    task.repeatDays ??
+    task.routine_days ??
+    task.week_days ??
+    task.days;
+
+  if (!raw) return [];
+
+  let values: any[] = [];
+
+  if (Array.isArray(raw)) {
+    values = raw;
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      values = Array.isArray(parsed) ? parsed : raw.split(",");
+    } catch {
+      values = raw.split(",");
+    }
+  }
+
+  return values.map(normalizeDayKey).filter(Boolean) as WeekDayKey[];
+}
+
+function routineRunsOnDate(task: any, key: string) {
+  if (!isRoutine(task)) return false;
+
+  const repeatDays = getRoutineRepeatDays(task);
+
+  // Compatibilité avec tes anciennes routines : si aucun jour n'est encore choisi,
+  // elles restent quotidiennes au lieu de disparaître.
+  if (repeatDays.length === 0) return true;
+
+  return repeatDays.includes(getWeekDayKey(key));
+}
+
+function isProjectScheduleItem(task: any) {
+  return task?.__kind === "project_schedule";
+}
+
+function getTaskEndHour(task: any) {
+  const value =
+    task.__endTime ||
+    task.end_time ||
+    task.endTime ||
+    task.finish_time ||
+    task.finishTime;
+
+  if (!value) return null;
+  return String(value).slice(0, 5);
+}
+
+function getTaskTimeLabel(task: any) {
+  const start = getTaskHour(task);
+  const end = getTaskEndHour(task);
+
+  if (end && start !== "--:--") return `${start} - ${end}`;
+  return start;
+}
+
+function getScheduleDate(schedule: any) {
+  const value =
+    schedule.scheduled_date ||
+    schedule.schedule_date ||
+    schedule.planned_date ||
+    schedule.date ||
+    schedule.due_date ||
+    schedule.day;
+
+  if (!value) return null;
+  return String(value).slice(0, 10);
+}
+
+function getScheduleStartHour(schedule: any) {
+  const value =
+    schedule.start_time || schedule.startTime || schedule.hour || schedule.time;
+
+  if (!value) return "--:--";
+  return String(value).slice(0, 5);
+}
+
+function getScheduleEndHour(schedule: any) {
+  const value =
+    schedule.end_time ||
+    schedule.endTime ||
+    schedule.finish_time ||
+    schedule.finishTime;
+
+  if (!value) return null;
+  return String(value).slice(0, 5);
+}
+
+function scheduleToPlanningTask(
+  schedule: any,
+  tasks: any[],
+  subtasks: any[],
+  projects: any[],
+) {
+  const subtask = subtasks.find((item) => item.id === schedule.subtask_id);
+  const parentTask = tasks.find(
+    (task) => task.id === (schedule.task_id || subtask?.task_id),
+  );
+
+  if (!parentTask) return null;
+
+  const project = projects.find((item) => item.id === parentTask.project_id);
+  const scheduleDate = getScheduleDate(schedule);
+
+  if (!scheduleDate) return null;
+
+  return {
+    ...parentTask,
+    id: `schedule-${schedule.id}`,
+    __kind: "project_schedule",
+    __scheduleId: schedule.id,
+    __subtaskId: subtask?.id || schedule.subtask_id,
+    __parentTaskId: parentTask.id,
+    __projectName: project?.name || "Projet",
+    __color: project?.color || parentTask.color || "#3b82f6",
+    __startTime: getScheduleStartHour(schedule),
+    __endTime: getScheduleEndHour(schedule),
+    name:
+      subtask?.name ||
+      subtask?.title ||
+      schedule.name ||
+      schedule.title ||
+      parentTask.name ||
+      parentTask.title ||
+      "Sous-tâche programmée",
+    title:
+      subtask?.name ||
+      subtask?.title ||
+      schedule.name ||
+      schedule.title ||
+      parentTask.name ||
+      parentTask.title ||
+      "Sous-tâche programmée",
+    date: scheduleDate,
+    due_date: scheduleDate,
+    hour: getScheduleStartHour(schedule),
+    start_time: getScheduleStartHour(schedule),
+    end_time: getScheduleEndHour(schedule),
+    done: schedule.done === true,
+    status: schedule.done ? "done" : "todo",
+    project_id: parentTask.project_id,
+  };
+}
+
+function sortPlanningItems(a: any, b: any) {
+  return getTaskHour(a).localeCompare(getTaskHour(b));
+}
 
 function dateKey(date: Date) {
   const y = date.getFullYear();
@@ -57,8 +269,10 @@ function getTaskDate(task: any) {
 }
 
 function getTaskHour(task: any) {
+  if (task.__startTime) return String(task.__startTime).slice(0, 5);
   if (task.hour) return String(task.hour).slice(0, 5);
   if (task.start_time) return String(task.start_time).slice(0, 5);
+  if (task.startTime) return String(task.startTime).slice(0, 5);
   return "--:--";
 }
 
@@ -72,16 +286,20 @@ function isDone(task: any) {
 
 function routineDone(task: any, logs: any[], key: string) {
   return logs.some(
-    (log) => log.task_id === task.id && log.completed_date === key
+    (log) => log.task_id === task.id && log.completed_date === key,
   );
 }
 
 function taskColor(task: any, projects: any[]) {
+  if (task.__color) return task.__color;
+
   const project = projects.find((p) => p.id === task.project_id);
   return project?.color || task.color || "#64748b";
 }
 
 function projectName(task: any, projects: any[]) {
+  if (task.__projectName) return task.__projectName;
+
   return projects.find((p) => p.id === task.project_id)?.name || null;
 }
 
@@ -89,13 +307,18 @@ function getProjectRealProgress(
   projectId: string,
   tasks: any[],
   subtasks: any[],
-  schedules: any[]
+  schedules: any[],
 ) {
   const projectTasks = tasks.filter((task) => task.project_id === projectId);
   const taskIds = projectTasks.map((task) => task.id);
+  const projectSubtaskIds = subtasks
+    .filter((subtask) => taskIds.includes(subtask.task_id))
+    .map((subtask) => subtask.id);
 
-  const projectSchedules = schedules.filter((schedule) =>
-    taskIds.includes(schedule.task_id)
+  const projectSchedules = schedules.filter(
+    (schedule) =>
+      taskIds.includes(schedule.task_id) ||
+      projectSubtaskIds.includes(schedule.subtask_id),
   );
 
   if (projectSchedules.length > 0) {
@@ -111,7 +334,7 @@ function getProjectRealProgress(
   }
 
   const projectSubtasks = subtasks.filter((subtask) =>
-    taskIds.includes(subtask.task_id)
+    taskIds.includes(subtask.task_id),
   );
 
   if (projectSubtasks.length > 0) {
@@ -166,7 +389,6 @@ export default function DashboardPage() {
     const { data, error } = await supabase.auth.getUser();
 
     if (error || !data.user) {
-      return null;
       return null;
     }
 
@@ -242,16 +464,43 @@ export default function DashboardPage() {
         subtasksData = subtasksResult || [];
       }
 
-      const { data: schedulesResult, error: schedulesError } = await supabase
-        .from("subtask_schedule")
-        .select("*")
-        .in("task_id", taskIds);
+      const scheduleRows: any[] = [];
 
-      if (schedulesError) {
-        console.error(schedulesError.message);
+      const { data: schedulesByTask, error: schedulesByTaskError } =
+        await supabase
+          .from("subtask_schedule")
+          .select("*")
+          .in("task_id", taskIds);
+
+      if (schedulesByTaskError) {
+        console.error(schedulesByTaskError.message);
       } else {
-        schedulesData = schedulesResult || [];
+        scheduleRows.push(...(schedulesByTask || []));
       }
+
+      const subtaskIds = subtasksData.map((subtask) => subtask.id);
+
+      if (subtaskIds.length > 0) {
+        const { data: schedulesBySubtask, error: schedulesBySubtaskError } =
+          await supabase
+            .from("subtask_schedule")
+            .select("*")
+            .in("subtask_id", subtaskIds);
+
+        if (!schedulesBySubtaskError) {
+          scheduleRows.push(...(schedulesBySubtask || []));
+        }
+      }
+
+      schedulesData = Array.from(
+        new Map(
+          scheduleRows.map((schedule, index) => [
+            schedule.id ||
+              `${schedule.task_id}-${schedule.subtask_id}-${index}`,
+            schedule,
+          ]),
+        ).values(),
+      );
     }
 
     setTasks(currentTasks);
@@ -267,9 +516,21 @@ export default function DashboardPage() {
 
     const today = dateKey(new Date());
 
+    if (isProjectScheduleItem(task)) {
+      const nextDone = !isDone(task);
+
+      await supabase
+        .from("subtask_schedule")
+        .update({ done: nextDone })
+        .eq("id", task.__scheduleId);
+
+      await loadData();
+      return;
+    }
+
     if (isRoutine(task)) {
       const existing = routineLogs.find(
-        (log) => log.task_id === task.id && log.completed_date === today
+        (log) => log.task_id === task.id && log.completed_date === today,
       );
 
       if (existing) {
@@ -300,13 +561,25 @@ export default function DashboardPage() {
 
   const todayKey = dateKey(new Date());
 
-  const routineTasks = tasks.filter(isRoutine);
+  const allRoutineTasks = tasks.filter(isRoutine);
+  const routineTasks = allRoutineTasks.filter((task) =>
+    routineRunsOnDate(task, todayKey),
+  );
   const normalTasks = tasks.filter((task) => !isRoutine(task));
 
-  const todayTasks = tasks.filter((task) => {
-    if (isRoutine(task)) return true;
-    return getTaskDate(task) === todayKey;
-  });
+  const scheduledProjectTasks = useMemo(() => {
+    return schedules
+      .map((schedule) =>
+        scheduleToPlanningTask(schedule, tasks, subtasks, projects),
+      )
+      .filter(Boolean) as any[];
+  }, [schedules, tasks, subtasks, projects]);
+
+  const todayTasks = [
+    ...normalTasks.filter((task) => getTaskDate(task) === todayKey),
+    ...routineTasks,
+    ...scheduledProjectTasks.filter((task) => getTaskDate(task) === todayKey),
+  ].sort(sortPlanningItems);
 
   const completedToday = todayTasks.filter((task) => {
     if (isRoutine(task)) return routineDone(task, routineLogs, todayKey);
@@ -333,30 +606,47 @@ export default function DashboardPage() {
       const day = addDays(monday, index);
       const key = dateKey(day);
 
-      const dayTasks = normalTasks.filter((task) => getTaskDate(task) === key);
+      const dayNormalTasks = normalTasks.filter(
+        (task) => getTaskDate(task) === key,
+      );
 
-      const planned = dayTasks.length;
+      const dayScheduledProjectTasks = scheduledProjectTasks.filter(
+        (task) => getTaskDate(task) === key,
+      );
 
-      const done = dayTasks.filter(isDone).length;
+      const dayRoutineTasks = allRoutineTasks.filter((task) =>
+        routineRunsOnDate(task, key),
+      );
 
-      const routinesDone = routineTasks.filter((task) =>
-        routineDone(task, routineLogs, key)
+      const planned =
+        dayNormalTasks.length +
+        dayScheduledProjectTasks.length +
+        dayRoutineTasks.length;
+
+      const done =
+        dayNormalTasks.filter(isDone).length +
+        dayScheduledProjectTasks.filter(isDone).length +
+        dayRoutineTasks.filter((task) => routineDone(task, routineLogs, key))
+          .length;
+
+      const routinesDone = dayRoutineTasks.filter((task) =>
+        routineDone(task, routineLogs, key),
       ).length;
 
       return {
-  day: label,
-  prévues: planned,
-  accomplies: done,
-  routines: routinesDone,
-};
+        day: label,
+        prévues: planned,
+        accomplies: done,
+        routines: routinesDone,
+      };
     });
-  }, [normalTasks, routineTasks, routineLogs]);
+  }, [normalTasks, scheduledProjectTasks, allRoutineTasks, routineLogs]);
 
   const recentTodayTasks = todayTasks.slice(0, 6);
   const recentProjects = projects.slice(0, 5);
 
   return (
-    <main className="min-h-scréen bg-[#030712] text-white flex overflow-hidden">
+    <main className="min-h-screen bg-[#030712] text-white flex overflow-hidden">
       <Sidebar />
 
       <section className="flex-1 overflow-y-auto px-8 py-8">
@@ -403,14 +693,14 @@ export default function DashboardPage() {
                   icon={<Repeat size={18} />}
                   label="Routines"
                   value={routineTasks.length}
-                  sub="répétées chaque jour"
+                  sub="selon les jours choisis"
                 />
 
                 <GlassStat
                   icon={<AlertTriangle size={18} />}
                   label="Urgentes aujourd'hui"
                   value={urgent}
-                  sub="Ã  traiter rapidement"
+                  sub="à traiter rapidement"
                 />
 
                 <GlassStat
@@ -533,6 +823,8 @@ export default function DashboardPage() {
 
                       const color = taskColor(task, projects);
                       const linkedProject = projectName(task, projects);
+                      const projectItem =
+                        isProjectScheduleItem(task) || !!linkedProject;
 
                       return (
                         <button
@@ -565,13 +857,25 @@ export default function DashboardPage() {
                               {task.name || task.title || "Sans titre"}
                             </p>
 
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/35">
-                              {linkedProject && <span>{linkedProject}</span>}
-                              {!linkedProject && (
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-white/35">
+                              {projectItem && linkedProject && (
+                                <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-2 py-0.5 text-sky-300">
+                                  Projet · {linkedProject}
+                                </span>
+                              )}
+
+                              {isRoutine(task) && (
+                                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2 py-0.5 text-emerald-300">
+                                  Routine
+                                </span>
+                              )}
+
+                              {!projectItem && !isRoutine(task) && (
                                 <span>{task.category || "Personnel"}</span>
                               )}
+
                               <span>·</span>
-                              <span>{getTaskHour(task)}</span>
+                              <span>{getTaskTimeLabel(task)}</span>
                             </div>
                           </div>
                         </button>
@@ -583,7 +887,9 @@ export default function DashboardPage() {
                 <div className="rounded-[32px] border border-white/10 bg-white/[0.035] p-6 shadow-2xl shadow-black/20 backdrop-blur-2xl">
                   <div className="mb-6 flex items-start justify-between gap-4">
                     <div>
-                      <h2 className="text-2xl font-semibold">Projets récents</h2>
+                      <h2 className="text-2xl font-semibold">
+                        Projets récents
+                      </h2>
 
                       <p className="mt-1 text-sm text-white/40">
                         Avancement réel
@@ -610,7 +916,7 @@ export default function DashboardPage() {
                         project.id,
                         tasks,
                         subtasks,
-                        schedules
+                        schedules,
                       );
 
                       const color = project.color || "#64748b";
@@ -737,4 +1043,3 @@ function LegendItem({ color, label }: { color: string; label: string }) {
     </div>
   );
 }
-

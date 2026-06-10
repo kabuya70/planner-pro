@@ -202,6 +202,153 @@ function normalizeColor(value: string | null | undefined) {
   return String(value);
 }
 
+
+const DEFAULT_TASK_DURATION_MINUTES = 60;
+
+function timeToMinutes(value: any) {
+  if (!value) return null;
+
+  const clean = String(value).slice(0, 5);
+  const parts = clean.split(":");
+
+  if (parts.length < 2) return null;
+
+  const hours = Number(parts[0]);
+  const minutes = Number(parts[1]);
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null;
+
+  return hours * 60 + minutes;
+}
+
+function minutesToTime(value: number) {
+  const safeValue = Math.max(0, Math.min(value, 23 * 60 + 59));
+  const hours = Math.floor(safeValue / 60);
+  const minutes = safeValue % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
+    2,
+    "0"
+  )}`;
+}
+
+function getPlanningDate(item: any) {
+  const value =
+    item?.planned_date ||
+    item?.scheduled_date ||
+    item?.schedule_date ||
+    item?.due_date ||
+    item?.date ||
+    item?.day;
+
+  if (!value) return null;
+
+  return String(value).slice(0, 10);
+}
+
+function getPlanningStart(item: any) {
+  return (
+    item?.start_time ||
+    item?.hour ||
+    item?.planned_time ||
+    item?.schedule_time ||
+    item?.time ||
+    null
+  );
+}
+
+function getPlanningEnd(item: any, fallbackStart: number) {
+  const end = timeToMinutes(item?.end_time || item?.finish_time);
+
+  if (end !== null && end > fallbackStart) return end;
+
+  return fallbackStart + DEFAULT_TASK_DURATION_MINUTES;
+}
+
+function rangesOverlap(
+  startA: number,
+  endA: number,
+  startB: number,
+  endB: number
+) {
+  return startA < endB && endA > startB;
+}
+
+function roundUpToQuarter(value: number) {
+  return Math.ceil(value / 15) * 15;
+}
+
+async function findFreeProjectSlot(
+  dateString: string,
+  requestedTime: string,
+  fallbackTasks: any[],
+  fallbackSchedules: any[]
+) {
+  const requestedStart = timeToMinutes(requestedTime);
+
+  if (requestedStart === null) {
+    return {
+      startTime: requestedTime,
+      endTime: null,
+      shifted: false,
+    };
+  }
+
+  const duration = DEFAULT_TASK_DURATION_MINUTES;
+
+  const { data: allTasksData } = await supabase.from("tasks").select("*");
+  const { data: allSchedulesData } = await supabase
+    .from("subtask_schedule")
+    .select("*");
+
+  const allTasks = Array.isArray(allTasksData) ? allTasksData : fallbackTasks;
+  const allSchedules = Array.isArray(allSchedulesData)
+    ? allSchedulesData
+    : fallbackSchedules;
+
+  const occupiedSlots = [...allTasks, ...allSchedules]
+    .filter((item) => getPlanningDate(item) === dateString)
+    .map((item) => {
+      const start = timeToMinutes(getPlanningStart(item));
+
+      if (start === null) return null;
+
+      return {
+        start,
+        end: getPlanningEnd(item, start),
+      };
+    })
+    .filter(Boolean) as { start: number; end: number }[];
+
+  let candidateStart = requestedStart;
+
+  while (candidateStart + duration <= 24 * 60) {
+    const candidateEnd = candidateStart + duration;
+
+    const conflict = occupiedSlots.find((slot) =>
+      rangesOverlap(candidateStart, candidateEnd, slot.start, slot.end)
+    );
+
+    if (!conflict) {
+      return {
+        startTime: minutesToTime(candidateStart),
+        endTime: minutesToTime(candidateEnd),
+        shifted: candidateStart !== requestedStart,
+      };
+    }
+
+    candidateStart = roundUpToQuarter(
+      Math.max(candidateStart + 15, conflict.end)
+    );
+  }
+
+  return {
+    startTime: minutesToTime(requestedStart),
+    endTime: minutesToTime(requestedStart + duration),
+    shifted: false,
+  };
+}
+
 export default function ProjectKanbanPage() {
   const router = useRouter();
   const params = useParams();
@@ -303,7 +450,26 @@ export default function ProjectKanbanPage() {
     setCreating(true);
 
     const finalDate = dueDate || null;
-    const finalHour = hour || null;
+    let finalHour = hour || null;
+    let finalEndTime: string | null = null;
+
+    if (finalDate && finalHour) {
+      const freeSlot = await findFreeProjectSlot(
+        finalDate,
+        finalHour,
+        tasks,
+        schedules
+      );
+
+      finalHour = freeSlot.startTime;
+      finalEndTime = freeSlot.endTime;
+
+      if (freeSlot.shifted) {
+        alert(
+          `L'heure choisie était déjà occupée. La tâche a été placée automatiquement à ${freeSlot.startTime}.`
+        );
+      }
+    }
 
     const payload: any = {
       name: name.trim(),
@@ -319,6 +485,7 @@ export default function ProjectKanbanPage() {
 
       hour: finalHour,
       start_time: finalHour,
+      end_time: finalEndTime,
 
       color: projectColor,
     };

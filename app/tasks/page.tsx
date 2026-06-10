@@ -42,6 +42,16 @@ const categories = [
   "Sport",
 ];
 
+const routineDays = [
+  { key: "mon", label: "Lun" },
+  { key: "tue", label: "Mar" },
+  { key: "wed", label: "Mer" },
+  { key: "thu", label: "Jeu" },
+  { key: "fri", label: "Ven" },
+  { key: "sat", label: "Sam" },
+  { key: "sun", label: "Dim" },
+];
+
 const colors = [
   { value: "#22c55e", label: "Vert" },
   { value: "#3b82f6", label: "Bleu" },
@@ -79,6 +89,7 @@ export default function TasksPage() {
   const [category, setCategory] = useState("Études");
   const [color, setColor] = useState("#64748b");
   const [repeatRule, setRepeatRule] = useState("none");
+  const [repeatDays, setRepeatDays] = useState<string[]>([]);
 
   useEffect(() => {
     loadData();
@@ -93,6 +104,31 @@ export default function TasksPage() {
     }
 
     return data.user;
+  }
+
+  function toggleRepeatDay(day: string) {
+    setRepeatDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  }
+
+  function selectAllRepeatDays() {
+    setRepeatDays(["mon", "tue", "wed", "thu", "fri", "sat", "sun"]);
+  }
+
+  function clearRepeatDays() {
+    setRepeatDays([]);
+  }
+
+  function getRepeatDaysLabel(days: string[] | null | undefined) {
+    if (!Array.isArray(days) || days.length === 0) return "Tous les jours";
+
+    if (days.length === 7) return "Toute la semaine";
+
+    return routineDays
+      .filter((day) => days.includes(day.key))
+      .map((day) => day.label)
+      .join(", ");
   }
 
   async function loadData() {
@@ -139,6 +175,7 @@ export default function TasksPage() {
     setCategory("Études");
     setColor("#64748b");
     setRepeatRule("none");
+    setRepeatDays([]);
     setEditingTask(null);
   }
 
@@ -148,6 +185,11 @@ export default function TasksPage() {
 
   async function saveTask() {
     if (!name.trim()) return;
+
+    if (category === "Routine" && repeatDays.length === 0) {
+      alert("Choisis au moins un jour pour cette routine.");
+      return;
+    }
 
     const currentUser = user || (await getCurrentUser());
 
@@ -165,7 +207,8 @@ export default function TasksPage() {
       priority,
       category,
       color,
-      repeat_rule: category === "Routine" ? "daily" : repeatRule,
+      repeat_rule: category === "Routine" ? "custom_days" : repeatRule,
+      repeat_days: category === "Routine" ? repeatDays : [],
       type: category === "Routine" ? "routine" : "task",
     };
 
@@ -217,6 +260,7 @@ export default function TasksPage() {
     setCategory(task.category || "Études");
     setColor(task.color || "#64748b");
     setRepeatRule(task.repeat_rule || "none");
+    setRepeatDays(Array.isArray(task.repeat_days) ? task.repeat_days : []);
     setModalOpen(true);
   }
 
@@ -433,7 +477,7 @@ export default function TasksPage() {
 
                   {task.category === "Routine" && (
                     <p className="text-[11px] text-green-400 mt-1">
-                      Routine quotidienne
+                      Routine · {getRepeatDaysLabel(task.repeat_days)}
                     </p>
                   )}
                 </div>
@@ -530,7 +574,15 @@ export default function TasksPage() {
                     setCategory(e.target.value);
 
                     if (e.target.value === "Routine") {
-                      setRepeatRule("daily");
+                      setRepeatRule("custom_days");
+                      setRepeatDays((prev) =>
+                        prev.length > 0
+                          ? prev
+                          : ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+                      );
+                    } else {
+                      setRepeatRule("none");
+                      setRepeatDays([]);
                     }
                   }}
                   className="field"
@@ -557,7 +609,11 @@ export default function TasksPage() {
                   value={repeatRule}
                   onChange={(e) => setRepeatRule(e.target.value)}
                   className="field"
+                  disabled={category === "Routine"}
                 >
+                  {category === "Routine" && (
+                    <option value="custom_days">Jours choisis</option>
+                  )}
                   <option value="none">Aucune répétition</option>
                   <option value="daily">Quotidienne</option>
                   <option value="weekly">Hebdomadaire</option>
@@ -576,6 +632,68 @@ export default function TasksPage() {
                   ))}
                 </select>
               </div>
+
+              {category === "Routine" && (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        Jours de répétition
+                      </p>
+
+                      <p className="mt-1 text-xs text-white/40">
+                        Choisis uniquement les jours où cette routine doit
+                        apparaître.
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={selectAllRepeatDays}
+                        className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-xs text-white/70 hover:bg-white/[0.1]"
+                      >
+                        Toute la semaine
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={clearRepeatDays}
+                        className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-white/45 hover:bg-white/[0.08]"
+                      >
+                        Effacer
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {routineDays.map((routineDay) => {
+                      const selected = repeatDays.includes(routineDay.key);
+
+                      return (
+                        <button
+                          key={routineDay.key}
+                          type="button"
+                          onClick={() => toggleRepeatDay(routineDay.key)}
+                          className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                            selected
+                              ? "bg-white text-black"
+                              : "bg-white/[0.06] text-white/50 hover:bg-white/[0.1] hover:text-white"
+                          }`}
+                        >
+                          {routineDay.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {repeatDays.length === 0 && (
+                    <p className="mt-3 text-xs text-red-300/80">
+                      Choisis au moins un jour.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <select
